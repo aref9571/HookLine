@@ -30,41 +30,52 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - The `hookline` Python package with configuration loading from `HOOKLINE_` environment variables
 - A FastAPI application with OpenAPI docs at `/docs`
 - `GET /health/live`, which returns `{"status": "ok"}`
-- Unit tests and a CI workflow for formatting, linting, type checking and tests
+- `GET /health/ready`, which checks the database and returns `503` when it cannot be reached
+- A PostgreSQL connection through SQLAlchemy, with Alembic migrations (the first one enables the `pgcrypto` extension; there are no application tables yet)
+- Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
+- A Docker Compose file that starts PostgreSQL 17 for local development
+- Unit tests, integration tests against a real PostgreSQL started by Testcontainers, and a CI workflow for formatting, linting, type checking and tests
 
 ## Tech stack
 
 - Python 3.12
 - FastAPI, Pydantic v2 and pydantic-settings
 - uvicorn
-- pytest, pytest-cov and httpx for tests
+- PostgreSQL 17, SQLAlchemy 2 with psycopg 3, Alembic
+- pytest, pytest-cov, httpx and Testcontainers for tests
 - ruff and mypy for code quality
+- Docker Compose for the local database
 - GitHub Actions for CI
-
-PostgreSQL, SQLAlchemy, Alembic and Docker are part of the planned stack and are added in later stages.
 
 ## Getting started
 
-Requirements: Python 3.12 or newer.
+Requirements: Python 3.12 or newer, and Docker with Docker Compose v2.
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
+cp .env.example .env
+set -a
+. ./.env
+set +a
 ```
 
-Copy `.env.example` to `.env` if you want to change the defaults, or set the variables in your shell.
+Hookline reads its configuration from environment variables. The application does not read `.env` itself, so the commands above load it into the shell. Docker Compose reads `.env` on its own.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `HOOKLINE_APP_NAME` | `Hookline` | Title shown in the API docs |
-| `HOOKLINE_LOG_LEVEL` | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `HOOKLINE_DATABASE_URL` | yes | none | `postgresql+psycopg://...` URL of the database |
+| `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
+| `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
-Run the API:
+Start PostgreSQL, run the migrations and start the API:
 
 ```bash
+docker compose up -d --wait postgres
+alembic upgrade head
 uvicorn hookline.main:app --reload
-curl localhost:8000/health/live
+curl localhost:8000/health/ready
 ```
 
 The interactive API docs are at http://localhost:8000/docs.
@@ -78,9 +89,12 @@ mypy src
 pytest --cov --cov-report=term-missing
 ```
 
+The integration tests start their own PostgreSQL container, so Docker must be running. See [docs/development.md](docs/development.md) for details and troubleshooting.
+
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Development](docs/development.md)
 - [Decision records](docs/decisions/)
 
 ## License

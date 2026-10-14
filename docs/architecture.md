@@ -33,10 +33,24 @@ The code lives in `src/hookline/`. Each feature has its own folder.
 |---|---|
 | `main.py` | Application factory `create_app()` and logging setup |
 | `config.py` | `Settings` read from `HOOKLINE_` environment variables |
-| `health/router.py` | Health endpoints |
+| `database.py` | Declarative `Base`, engine creation and the `get_session` dependency |
+| `errors.py` | Application exceptions and the problem details error handlers |
+| `health/router.py` | Liveness and readiness endpoints |
+
+Database migrations live in `migrations/` and are run with Alembic.
 
 Feature folders follow the same shape as they are added: SQLAlchemy models, Pydantic schemas, a service module with plain functions that take a database connection object, and a FastAPI router. Routers translate HTTP requests into service calls and contain no queries. There is no separate repository layer.
 
 ## Current state
 
-Only the application factory, configuration and the liveness endpoint `GET /health/live` exist so far. The database, the worker and the API under `/api/v1` are added in later stages.
+The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far. There are no application tables yet. The domain model, the worker and the API under `/api/v1` are added in later stages.
+
+## Errors
+
+Every error response uses RFC 9457 problem details with the media type `application/problem+json`:
+
+```json
+{"type": "about:blank", "title": "Invalid request", "status": 400, "detail": "One or more fields are invalid.", "errors": [{"field": "limit", "message": "Input should be a valid integer"}]}
+```
+
+`errors` is only present for validation failures. Unexpected exceptions are logged with their stack trace and returned as a generic `500`; their message never reaches the client.
