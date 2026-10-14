@@ -15,6 +15,24 @@ def test_settings_use_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.log_level == "INFO"
 
 
+def test_settings_read_database_url_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOOKLINE_DATABASE_URL", "postgresql+psycopg://user:secret@db:5432/hookline")
+
+    settings = Settings()
+
+    assert settings.database_url == "postgresql+psycopg://user:secret@db:5432/hookline"
+
+
+def test_settings_require_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("HOOKLINE_DATABASE_URL", raising=False)
+
+    with pytest.raises(ValidationError) as error:
+        Settings()
+
+    assert error.value.errors()[0]["loc"] == ("database_url",)
+    assert error.value.errors()[0]["type"] == "missing"
+
+
 def test_settings_read_log_level_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOOKLINE_LOG_LEVEL", "DEBUG")
 

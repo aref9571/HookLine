@@ -1,0 +1,38 @@
+import pytest
+from alembic import command
+from sqlalchemy import Engine, inspect, text
+
+from tests.conftest import alembic_config
+
+pytestmark = pytest.mark.integration
+
+
+def current_revision(engine: Engine) -> str | None:
+    if not inspect(engine).has_table("alembic_version"):
+        return None
+    with engine.connect() as connection:
+        return connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+
+
+def pgcrypto_is_installed(engine: Engine) -> bool:
+    with engine.connect() as connection:
+        result = connection.execute(
+            text("SELECT count(*) FROM pg_extension WHERE extname = :name"), {"name": "pgcrypto"}
+        )
+        return result.scalar() == 1
+
+
+def test_migrations_downgrade_to_base_and_upgrade_again(db_engine: Engine) -> None:
+    command.downgrade(alembic_config(), "base")
+
+    assert current_revision(db_engine) is None
+    assert not pgcrypto_is_installed(db_engine)
+
+    command.upgrade(alembic_config(), "head")
+
+    assert current_revision(db_engine) == "0001"
+    assert pgcrypto_is_installed(db_engine)
+
+
+def test_migrations_match_the_models(db_engine: Engine) -> None:
+    command.check(alembic_config())
