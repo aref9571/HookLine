@@ -42,7 +42,7 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - FastAPI, Pydantic v2 and pydantic-settings
 - uvicorn
 - PostgreSQL 17, SQLAlchemy 2 with psycopg 3, Alembic
-- pytest, pytest-cov, httpx and Testcontainers for tests
+- pytest, pytest-cov, httpx2 and Testcontainers for tests
 - ruff and mypy for code quality
 - Docker Compose for the local database
 - GitHub Actions for CI
