@@ -4,7 +4,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from hookline.config import Settings
-from hookline.database import Base
+from hookline.models import Base
 
 config = context.config
 

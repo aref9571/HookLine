@@ -10,7 +10,7 @@ from sqlalchemy import Engine, create_engine, text
 from testcontainers.community.postgres import PostgresContainer
 
 from hookline.config import Settings
-from hookline.database import Base
+from hookline.models import Base
 
 UNREACHABLE_DATABASE_URL = "postgresql+psycopg://hookline:hookline@127.0.0.1:1/hookline"
 ALEMBIC_CONFIG_PATH = Path(__file__).resolve().parents[1] / "alembic.ini"
