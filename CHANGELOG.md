@@ -25,3 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker Compose file with a local PostgreSQL 17 service.
 - Integration tests against PostgreSQL 17 started with Testcontainers.
 - Development guide and the decision record for synchronous SQLAlchemy.
+- SQLAlchemy models for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts.
+- Migration `0002` creating these tables with their check constraints, unique constraints, the case-insensitive email index, the partial index for due deliveries and the delivery history index.
+- Integration tests for every check constraint, unique constraint and delete rule of the schema.
+- Database documentation with the delivery status diagram.

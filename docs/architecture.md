@@ -34,16 +34,18 @@ The code lives in `src/hookline/`. Each feature has its own folder.
 | `main.py` | Application factory `create_app()` and logging setup |
 | `config.py` | `Settings` read from `HOOKLINE_` environment variables |
 | `database.py` | Declarative `Base`, engine creation and the `get_session` dependency |
+| `models.py` | Imports every model, so Alembic and the tests see all tables |
+| `users/`, `api_keys/`, `endpoints/`, `events/`, `deliveries/` | SQLAlchemy models of each feature |
 | `errors.py` | Application exceptions and the problem details error handlers |
 | `health/router.py` | Liveness and readiness endpoints |
 
-Database migrations live in `migrations/` and are run with Alembic.
+Database migrations live in `migrations/` and are run with Alembic. The schema is described in [database.md](database.md).
 
 Feature folders follow the same shape as they are added: SQLAlchemy models, Pydantic schemas, a service module with plain functions that take a database connection object, and a FastAPI router. Routers translate HTTP requests into service calls and contain no queries. There is no separate repository layer.
 
 ## Current state
 
-The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far. There are no application tables yet. The domain model, the worker and the API under `/api/v1` are added in later stages.
+The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. The worker and the API under `/api/v1` are added in later stages.
 
 ## Errors
 

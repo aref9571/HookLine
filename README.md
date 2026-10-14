@@ -31,10 +31,11 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - A FastAPI application with OpenAPI docs at `/docs`
 - `GET /health/live`, which returns `{"status": "ok"}`
 - `GET /health/ready`, which checks the database and returns `503` when it cannot be reached
-- A PostgreSQL connection through SQLAlchemy, with Alembic migrations (the first one enables the `pgcrypto` extension; there are no application tables yet)
+- A PostgreSQL connection through SQLAlchemy, with Alembic migrations
+- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts, with its constraints and indexes (described in [docs/database.md](docs/database.md)); there are no API routes for them yet
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
 - A Docker Compose file that starts PostgreSQL 17 for local development
-- Unit tests, integration tests against a real PostgreSQL started by Testcontainers, and a CI workflow for formatting, linting, type checking and tests
+- Unit tests, integration tests against a real PostgreSQL started by Testcontainers (including tests for every check constraint, unique constraint and delete rule of the schema), and a CI workflow for formatting, linting, type checking and tests
 
 ## Tech stack
 
@@ -94,6 +95,7 @@ The integration tests start their own PostgreSQL container, so Docker must be ru
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Database](docs/database.md)
 - [Development](docs/development.md)
 - [Decision records](docs/decisions/)
 
