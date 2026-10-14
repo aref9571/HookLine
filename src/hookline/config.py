@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Hookline"
     log_level: LogLevel = "INFO"
+    database_url: str
 
 
 @lru_cache

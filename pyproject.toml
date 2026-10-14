@@ -15,6 +15,9 @@ dependencies = [
     "uvicorn[standard]>=0.54.0,<1",
     "pydantic>=2.14.1,<3",
     "pydantic-settings>=2.15.0,<3",
+    "sqlalchemy>=2.1.4,<3",
+    "psycopg[binary]>=3.3.6,<4",
+    "alembic>=1.20.0,<2",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +27,7 @@ dev = [
     "httpx>=0.28.1,<1",
     "ruff>=0.17.0,<1",
     "mypy>=2.4.0,<3",
+    "testcontainers[postgres]>=4.15.0,<5",
 ]
 
 [tool.setuptools.packages.find]
@@ -47,6 +51,7 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = ["integration: tests that need a real PostgreSQL database"]
 
 [tool.coverage.run]
 source = ["hookline"]
