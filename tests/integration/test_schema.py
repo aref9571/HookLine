@@ -160,6 +160,28 @@ def test_user_email_uniqueness_ignores_case(db_session: Session) -> None:
     assert violated_constraint(error.value) == "uq_users_email_lower"
 
 
+def test_refresh_tokens_reject_a_repeated_token_hash(db_session: Session) -> None:
+    user = add_user(db_session)
+    db_session.add(RefreshToken(user_id=user.id, token_hash="t" * 64, expires_at=NOW))
+    db_session.flush()
+
+    with pytest.raises(IntegrityError) as error:
+        db_session.add(RefreshToken(user_id=user.id, token_hash="t" * 64, expires_at=NOW))
+        db_session.flush()
+
+    assert violated_constraint(error.value) == "uq_refresh_tokens_token_hash"
+
+
+def test_api_keys_reject_a_repeated_key_hash(db_session: Session) -> None:
+    user = add_user(db_session)
+    add_api_key(db_session, user)
+
+    with pytest.raises(IntegrityError) as error:
+        add_api_key(db_session, user)
+
+    assert violated_constraint(error.value) == "uq_api_keys_key_hash"
+
+
 @pytest.mark.parametrize("status", list(DeliveryStatus))
 def test_deliveries_accept_every_known_status(db_session: Session, status: DeliveryStatus) -> None:
     delivery = add_delivery_for_new_event(db_session, status=status)
