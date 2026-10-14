@@ -7,6 +7,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.orm import Session
 from testcontainers.community.postgres import PostgresContainer
 
 from hookline.config import Settings
@@ -57,6 +58,12 @@ def db_engine(database_url: str) -> Iterator[Engine]:
 def clean_database(db_engine: Engine) -> Iterator[None]:
     yield
     truncate_all_tables(db_engine)
+
+
+@pytest.fixture
+def db_session(db_engine: Engine, clean_database: None) -> Iterator[Session]:
+    with Session(db_engine) as session:
+        yield session
 
 
 @pytest.fixture
