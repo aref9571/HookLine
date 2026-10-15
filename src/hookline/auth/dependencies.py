@@ -1,15 +1,18 @@
 from typing import Annotated
 
 from fastapi import Depends
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 
+from hookline.api_keys.service import authenticate_api_key
 from hookline.auth.tokens import decode_access_token
+from hookline.clock import Now
 from hookline.config import AppSettings
 from hookline.database import DbSession
-from hookline.errors import ForbiddenError, UnauthorizedError
+from hookline.errors import ForbiddenError, InvalidApiKeyError, UnauthorizedError
 from hookline.users.models import User, UserRole
 
 bearer_scheme = HTTPBearer(auto_error=False)
+api_key_scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def get_current_user(
@@ -36,3 +39,16 @@ def require_admin(user: CurrentUser) -> User:
 
 
 AdminUser = Annotated[User, Depends(require_admin)]
+
+
+def get_api_key_owner(
+    db: DbSession,
+    now: Now,
+    api_key: Annotated[str | None, Depends(api_key_scheme)],
+) -> User:
+    if not api_key:
+        raise InvalidApiKeyError("Missing API key.")
+    return authenticate_api_key(db, api_key, now)
+
+
+ApiKeyOwner = Annotated[User, Depends(get_api_key_owner)]

@@ -2,6 +2,7 @@ import logging
 
 from fastapi import FastAPI
 
+from hookline.api_keys.router import router as api_keys_router
 from hookline.auth.router import router as auth_router
 from hookline.config import Settings, get_settings
 from hookline.database import create_engine_from_settings, create_session_factory
@@ -31,6 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(users_router)
+    app.include_router(api_keys_router)
     return app
 
 

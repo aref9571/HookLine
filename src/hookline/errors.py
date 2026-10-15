@@ -40,6 +40,10 @@ class UnauthorizedError(AppError):
     headers = {"WWW-Authenticate": "Bearer"}
 
 
+class InvalidApiKeyError(UnauthorizedError):
+    headers = {"WWW-Authenticate": "ApiKey"}
+
+
 class ForbiddenError(AppError):
     status = 403
     title = "Forbidden"
