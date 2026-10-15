@@ -14,11 +14,13 @@ from hookline.config import Settings
 from hookline.models import Base
 
 UNREACHABLE_DATABASE_URL = "postgresql+psycopg://hookline:hookline@127.0.0.1:1/hookline"
+TEST_JWT_SECRET = "test-jwt-secret-with-at-least-32-characters"
 ALEMBIC_CONFIG_PATH = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
 def pytest_configure(config: pytest.Config) -> None:
     os.environ.setdefault("HOOKLINE_DATABASE_URL", UNREACHABLE_DATABASE_URL)
+    os.environ.setdefault("HOOKLINE_JWT_SECRET", TEST_JWT_SECRET)
 
 
 def alembic_config() -> Config:
