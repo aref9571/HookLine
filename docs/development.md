@@ -39,6 +39,8 @@ set +a
 | `HOOKLINE_JWT_SECRET` | yes | none | Secret for signing access tokens, at least 32 characters |
 | `HOOKLINE_ACCESS_TOKEN_MINUTES` | no | `15` | Lifetime of an access token in minutes |
 | `HOOKLINE_REFRESH_TOKEN_DAYS` | no | `7` | Lifetime of a refresh token in days |
+| `HOOKLINE_REQUIRE_HTTPS_TARGETS` | no | `true` | Endpoint URLs must use `https`; `false` also allows `http` |
+| `HOOKLINE_ALLOW_PRIVATE_TARGETS` | no | `false` | `true` skips the private address checks on endpoint URLs; only for tests and local demos |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | for Compose | none | Credentials of the local PostgreSQL container |

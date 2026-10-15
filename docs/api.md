@@ -15,7 +15,7 @@ Access tokens come from `POST /api/v1/auth/login`. API keys are created with `PO
 
 There are two roles:
 
-- `admin`: may also manage users.
+- `admin`: may also manage users, and sees and manages the endpoints of all users.
 - `member`: manages only their own resources.
 
 A missing or invalid token returns `401` with a `WWW-Authenticate: Bearer` header. A missing, unknown or revoked API key, or a key whose owner is deactivated, returns `401` with `WWW-Authenticate: ApiKey`. A member calling an admin route gets `403`. A resource that does not exist or belongs to someone else returns `404`.
@@ -60,6 +60,12 @@ List routes accept `limit` (1 to 100, default 20) and `offset` (0 or more, defau
 | POST | `/api/v1/api-keys` | JWT | 201 |
 | GET | `/api/v1/api-keys` | JWT | 200 |
 | DELETE | `/api/v1/api-keys/{id}` | JWT | 204 |
+| POST | `/api/v1/endpoints` | JWT | 201 |
+| GET | `/api/v1/endpoints` | JWT | 200 |
+| GET | `/api/v1/endpoints/{id}` | JWT | 200 |
+| PATCH | `/api/v1/endpoints/{id}` | JWT | 200 |
+| DELETE | `/api/v1/endpoints/{id}` | JWT | 204 |
+| POST | `/api/v1/endpoints/{id}/rotate-secret` | JWT | 200 |
 
 ### Health
 
@@ -221,3 +227,98 @@ Response `200`:
 ### DELETE /api/v1/api-keys/{id}
 
 Any logged-in user, own keys only. Revokes the key by setting `revoked_at`; the row is kept so the key still shows in the list. Response `204` with no body. Revoking a key that is already revoked also returns `204`. A key that does not exist or belongs to someone else returns `404`.
+
+### POST /api/v1/endpoints
+
+Any logged-in user. Registers a subscriber URL for the caller.
+
+```json
+{
+  "url": "https://hooks.example.com/webhook",
+  "description": "Order system",
+  "event_types": ["order.created", "order.paid"]
+}
+```
+
+- `url`: checked against the rules in [security.md](security.md#server-side-request-forgery-ssrf). By default it must use `https` and its host must not resolve to a private, loopback, link-local, multicast, reserved or unspecified address.
+- `description`: optional, at most 255 characters.
+- `event_types`: 1 to 50 different event types. Each one starts with a lower-case letter or a digit, followed by up to 99 lower-case letters, digits, `_`, `.` or `-`. The single value `["*"]` means all event types; `*` cannot be combined with other types.
+
+Response `201`:
+
+```json
+{
+  "id": "4f0c2d8e-9b1a-4c7e-8d35-2a6b1e9f0c47",
+  "user_id": "0b9d6a3e-1f4c-4e8a-b2d7-5c8e1a3f6d90",
+  "url": "https://hooks.example.com/webhook",
+  "description": "Order system",
+  "event_types": ["order.created", "order.paid"],
+  "is_active": true,
+  "created_at": "2026-10-15T14:05:12.448210Z",
+  "updated_at": "2026-10-15T14:05:12.448210Z",
+  "secret": "whsec_Q2hhbmdlLW1lLXRoaXMtaXMtYW4tZXhhbXBsZQ7xK2p",
+  "message": "Store this secret now. It will not be shown again."
+}
+```
+
+`secret` is used to sign deliveries to this endpoint. It is returned only here and by `rotate-secret`.
+
+An unsafe URL returns `400`:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Invalid request",
+  "status": 400,
+  "detail": "One or more fields are invalid.",
+  "errors": [{"field": "url", "message": "must not point to a private or reserved address"}]
+}
+```
+
+### GET /api/v1/endpoints
+
+Any logged-in user. Paginated list, newest first. Members see their own endpoints, admins see all endpoints. The optional query parameter `is_active=true` or `is_active=false` filters the list. The secret is not included.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    {
+      "id": "4f0c2d8e-9b1a-4c7e-8d35-2a6b1e9f0c47",
+      "user_id": "0b9d6a3e-1f4c-4e8a-b2d7-5c8e1a3f6d90",
+      "url": "https://hooks.example.com/webhook",
+      "description": "Order system",
+      "event_types": ["order.created", "order.paid"],
+      "is_active": true,
+      "created_at": "2026-10-15T14:05:12.448210Z",
+      "updated_at": "2026-10-15T14:05:12.448210Z"
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### GET /api/v1/endpoints/{id}
+
+Response `200`: one endpoint in the same shape as a list item, without the secret. An endpoint that does not exist, or belongs to another user when the caller is a member, returns `404`.
+
+### PATCH /api/v1/endpoints/{id}
+
+Changes `url`, `description`, `event_types` or `is_active`. Fields that are left out are not changed. For `url`, `event_types` and `is_active`, `null` also means no change; `"description": null` removes the description. A new URL is checked with the same rules as on creation. `updated_at` is set to the current time.
+
+```json
+{"event_types": ["order.refunded"], "is_active": false}
+```
+
+Response `200`: the updated endpoint, without the secret. Same `404` rule as above.
+
+### DELETE /api/v1/endpoints/{id}
+
+Deletes the endpoint and, through the database, all of its deliveries. Response `204` with no body. Same `404` rule as above.
+
+### POST /api/v1/endpoints/{id}/rotate-secret
+
+Replaces the signing secret with a new one. No request body. Response `200`: the endpoint with the new `secret` and the same `message` as on creation. The old secret is no longer used. Same `404` rule as above.

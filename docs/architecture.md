@@ -41,7 +41,8 @@ The code lives in `src/hookline/`. Each feature has its own folder.
 | `auth/` | Password hashing, JWT access tokens, refresh tokens, login, refresh and logout, and the `get_current_user`, `require_admin` and `get_api_key_owner` dependencies |
 | `users/` | User and refresh token models, `GET /api/v1/users/me` and the admin user management routes |
 | `api_keys/` | API key model, creating, listing and revoking keys, and checking a key sent by a producer |
-| `endpoints/`, `events/`, `deliveries/` | SQLAlchemy models of each feature |
+| `endpoints/` | Endpoint model, creating, listing, updating and deleting endpoints, rotating signing secrets, and the URL safety checks in `url_safety.py` |
+| `events/`, `deliveries/` | SQLAlchemy models of each feature |
 | `errors.py` | Application exceptions and the problem details error handlers |
 | `health/router.py` | Liveness and readiness endpoints |
 
@@ -51,7 +52,7 @@ Feature folders follow the same shape as they are added: SQLAlchemy models, Pyda
 
 ## Current state
 
-The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management and API key management exist; they are listed in [api.md](api.md), and how passwords, tokens, roles and API keys are handled is described in [security.md](security.md). The worker and the other routes are added in later stages.
+The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management, API key management and endpoint management exist; they are listed in [api.md](api.md), and how passwords, tokens, roles, API keys, endpoint secrets and endpoint URLs are handled is described in [security.md](security.md). The worker and the other routes are added in later stages.
 
 ## Errors
 

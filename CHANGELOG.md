@@ -42,3 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API keys: `POST /api/v1/api-keys` returns the key once, `GET /api/v1/api-keys` lists the caller's keys, `DELETE /api/v1/api-keys/{id}` revokes a key. Only the SHA-256 hash of a key is stored.
 - Authentication of producer requests with the `X-API-Key` header.
 - API documentation in `docs/api.md`, and security documentation for roles and API keys.
+- Settings `HOOKLINE_REQUIRE_HTTPS_TARGETS` (default `true`) and `HOOKLINE_ALLOW_PRIVATE_TARGETS` (default `false`).
+- Endpoint URL checks against server-side request forgery: scheme, host, credentials, fragment and length rules, and rejection of `localhost` and of hosts that resolve to private, loopback, link-local, multicast, reserved or unspecified addresses.
+- Endpoint management: `POST /api/v1/endpoints` returns the signing secret once, `GET /api/v1/endpoints` (own endpoints, or all for admins, with an `is_active` filter), `GET`, `PATCH` and `DELETE /api/v1/endpoints/{id}`, and `POST /api/v1/endpoints/{id}/rotate-secret` returns a new secret once.
+- Security documentation for endpoint secrets and the SSRF checks.

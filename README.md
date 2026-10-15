@@ -32,11 +32,13 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - `GET /health/live`, which returns `{"status": "ok"}`
 - `GET /health/ready`, which checks the database and returns `503` when it cannot be reached
 - A PostgreSQL connection through SQLAlchemy, with Alembic migrations
-- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts, with its constraints and indexes (described in [docs/database.md](docs/database.md)); users, refresh tokens and API keys are used by the API so far
+- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts, with its constraints and indexes (described in [docs/database.md](docs/database.md)); users, refresh tokens, API keys and endpoints are used by the API so far
 - Login with a JWT access token and a rotating refresh token: `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh` and `POST /api/v1/auth/logout`, with reuse detection for refresh tokens
 - `GET /api/v1/users/me`, which returns the logged-in user
 - `admin` and `member` roles; admins create, list, promote, demote, deactivate and reactivate users with `POST /api/v1/users`, `GET /api/v1/users` and `PATCH /api/v1/users/{id}`
 - API keys for producer applications: `POST /api/v1/api-keys` (the key is shown once), `GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{id}`, and a dependency that authenticates requests with the `X-API-Key` header (used by event intake later)
+- Subscriber endpoints: `POST /api/v1/endpoints` (the signing secret is shown once), `GET /api/v1/endpoints`, `GET`, `PATCH` and `DELETE /api/v1/endpoints/{id}`, and `POST /api/v1/endpoints/{id}/rotate-secret`
+- Checks on endpoint URLs against server-side request forgery: `https` only by default, no credentials or fragments, and no host that resolves to a private, loopback, link-local, multicast, reserved or unspecified address (described in [docs/security.md](docs/security.md))
 - Pagination with `limit` and `offset` on list routes
 - A command to create the first admin user: `python -m hookline.cli create-admin --email ...`
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
@@ -79,6 +81,8 @@ Hookline reads its configuration from environment variables. The application doe
 | `HOOKLINE_JWT_SECRET` | yes | none | Secret for signing access tokens, at least 32 characters |
 | `HOOKLINE_ACCESS_TOKEN_MINUTES` | no | `15` | Lifetime of an access token |
 | `HOOKLINE_REFRESH_TOKEN_DAYS` | no | `7` | Lifetime of a refresh token |
+| `HOOKLINE_REQUIRE_HTTPS_TARGETS` | no | `true` | Endpoint URLs must use `https`; `false` also allows `http` |
+| `HOOKLINE_ALLOW_PRIVATE_TARGETS` | no | `false` | `true` skips the private address checks on endpoint URLs; only for tests and local demos |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 

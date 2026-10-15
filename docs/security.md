@@ -1,6 +1,6 @@
 # Security
 
-This document describes how Hookline protects passwords, tokens and API keys, and how roles are checked. Later sections are added as the matching features are built.
+This document describes how Hookline protects passwords, tokens, API keys and endpoint secrets, how roles are checked and how subscriber URLs are checked against server-side request forgery. Later sections are added as the matching features are built.
 
 ## Passwords
 
@@ -44,10 +44,45 @@ This document describes how Hookline protects passwords, tokens and API keys, an
 - `last_used_at` is updated at most once a minute per key, so a busy producer does not cause a database write on every request.
 - Revoking a key (`DELETE /api/v1/api-keys/{id}`) sets `revoked_at`; the key stops working at once. Keys of other users return `404`, so their IDs cannot be probed.
 
+## Endpoint signing secrets
+
+- Each endpoint gets a signing secret `whsec_` followed by `secrets.token_urlsafe(32)` (32 random bytes). Deliveries will be signed with it with HMAC-SHA256.
+- The secret is returned only by `POST /api/v1/endpoints` and `POST /api/v1/endpoints/{id}/rotate-secret`. No other route returns it, and it is never logged.
+- Hookline must read the secret to sign each delivery, so it cannot be stored as a hash like API keys. It is stored as plain text in `endpoints.secret`. Anyone with read access to the database can read the secrets. Encrypting them at rest with a key kept outside the database is possible future work.
+- Rotating replaces the secret at once; the old secret stops being used immediately.
+
+## Server-side request forgery (SSRF)
+
+Users choose the URLs that Hookline sends requests to. Without checks, a user could make Hookline call services that are only reachable from inside its network, such as the database, an admin interface or the cloud metadata service at `169.254.169.254`. `validate_target_url` in `src/hookline/endpoints/url_safety.py` checks every endpoint URL when an endpoint is created and when its URL is changed. A rejected URL returns `400` with the reason in `errors`, for the field `url`.
+
+Rules for the URL itself:
+
+- The scheme must be `https`. When `HOOKLINE_REQUIRE_HTTPS_TARGETS` is `false`, `http` is allowed too.
+- A host is required.
+- No username or password in the URL (`https://user:pass@host`).
+- No fragment (`#...`), because a fragment is never sent to the server and is most likely a mistake.
+- At most 2048 characters, and the port must be valid.
+
+Rules for the address, unless `HOOKLINE_ALLOW_PRIVATE_TARGETS` is `true`:
+
+- The name `localhost` and any name ending in `.localhost` are rejected without a DNS lookup.
+- An IP address in the URL is checked directly. A host name is resolved with `socket.getaddrinfo`, and the URL is rejected if **any** of the returned addresses is private, loopback, link-local, multicast, reserved or unspecified (checked with the properties of `ipaddress.ip_address`). An IPv6 address that wraps an IPv4 address (`::ffff:10.0.0.5`) is checked as the IPv4 address.
+- A host name that does not resolve is rejected.
+
+`HOOKLINE_ALLOW_PRIVATE_TARGETS=true` is meant only for tests and the local demo, where the receiver runs on the same machine. It skips the address rules, but the URL rules still apply.
+
+The resolver is passed in as a function (the FastAPI dependency `get_resolver`, `socket.getaddrinfo` by default), so tests use a fake resolver and never do real DNS lookups.
+
+Limits of these checks:
+
+- DNS can change after the check. A host name can resolve to a public address when the endpoint is saved and to a private address later (DNS rebinding). The same check will run again right before each delivery, which makes this much harder, but a short time remains between that check and the moment the HTTP client connects and resolves the name again. Closing that gap fully would mean connecting to the checked address directly.
+- Redirects are a separate path to an internal address; the sender will not follow redirects.
+- Only the address ranges known to Python's `ipaddress` module are blocked. Addresses that are public on the internet but reachable only inside a particular network (for example a company's own public range behind a firewall) are not detected.
+
 ## Clock
 
 The current time comes from the FastAPI dependency `get_now` in `src/hookline/clock.py`, which returns `datetime.now(UTC)`. Tests replace it to check expiry without waiting.
 
 ## Logging
 
-Passwords, password hashes, access tokens, refresh tokens, API keys and all of their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values, and another test does the same for creating and revoking an API key.
+Passwords, password hashes, access tokens, refresh tokens, API keys and all of their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values, another test does the same for creating and revoking an API key, and a third one checks that endpoint secrets and endpoint URLs are not logged when an endpoint is created or its secret is rotated. Endpoint log lines only contain the endpoint ID and the user ID.
