@@ -125,3 +125,25 @@ def test_startup_fails_without_jwt_secret(monkeypatch: pytest.MonkeyPatch) -> No
         create_app()
 
     get_settings.cache_clear()
+
+
+def test_settings_default_to_https_only_and_public_targets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HOOKLINE_REQUIRE_HTTPS_TARGETS", raising=False)
+    monkeypatch.delenv("HOOKLINE_ALLOW_PRIVATE_TARGETS", raising=False)
+
+    settings = Settings()
+
+    assert settings.require_https_targets is True
+    assert settings.allow_private_targets is False
+
+
+def test_settings_read_target_rules_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOOKLINE_REQUIRE_HTTPS_TARGETS", "false")
+    monkeypatch.setenv("HOOKLINE_ALLOW_PRIVATE_TARGETS", "true")
+
+    settings = Settings()
+
+    assert settings.require_https_targets is False
+    assert settings.allow_private_targets is True
