@@ -36,11 +36,20 @@ set +a
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `HOOKLINE_DATABASE_URL` | yes | none | SQLAlchemy URL, for example `postgresql+psycopg://hookline:change-me@127.0.0.1:5432/hookline` |
+| `HOOKLINE_JWT_SECRET` | yes | none | Secret for signing access tokens, at least 32 characters |
+| `HOOKLINE_ACCESS_TOKEN_MINUTES` | no | `15` | Lifetime of an access token in minutes |
+| `HOOKLINE_REFRESH_TOKEN_DAYS` | no | `7` | Lifetime of a refresh token in days |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | for Compose | none | Credentials of the local PostgreSQL container |
 
-The application refuses to start if `HOOKLINE_DATABASE_URL` is not set.
+The application refuses to start if `HOOKLINE_DATABASE_URL` or `HOOKLINE_JWT_SECRET` is not set, or if the JWT secret is shorter than 32 characters. Alembic and the command-line tool read the same settings, so they need both variables too. Create a JWT secret with:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+The tests set their own placeholder values and do not need these variables.
 
 ## Starting PostgreSQL
 
@@ -68,6 +77,14 @@ ruff format migrations
 ```
 
 Autogenerate puts two comment lines around the generated operations. Delete them before committing, because the project keeps no comments in code.
+
+## Creating the first admin
+
+```bash
+python -m hookline.cli create-admin --email admin@example.com
+```
+
+The command asks for the password twice without showing it. To run it without a prompt, set `HOOKLINE_ADMIN_PASSWORD` for that one command. The password must be 12 to 128 characters and at most 72 bytes in UTF-8. The command fails if a user with that email already exists.
 
 ## Running the API
 

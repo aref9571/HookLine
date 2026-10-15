@@ -32,10 +32,14 @@ The code lives in `src/hookline/`. Each feature has its own folder.
 | Module | Responsibility |
 |---|---|
 | `main.py` | Application factory `create_app()` and logging setup |
-| `config.py` | `Settings` read from `HOOKLINE_` environment variables |
+| `config.py` | `Settings` read from `HOOKLINE_` environment variables, and the `AppSettings` dependency |
+| `clock.py` | The `get_now` dependency that gives the current time and can be replaced in tests |
+| `cli.py` | Command-line tool with the `create-admin` command |
 | `database.py` | Declarative `Base`, engine creation and the `get_session` dependency |
 | `models.py` | Imports every model, so Alembic and the tests see all tables |
-| `users/`, `api_keys/`, `endpoints/`, `events/`, `deliveries/` | SQLAlchemy models of each feature |
+| `auth/` | Password hashing, JWT access tokens, refresh tokens, login, refresh and logout, and the `get_current_user` dependency |
+| `users/` | User and refresh token models, `GET /api/v1/users/me` and creating users |
+| `api_keys/`, `endpoints/`, `events/`, `deliveries/` | SQLAlchemy models of each feature |
 | `errors.py` | Application exceptions and the problem details error handlers |
 | `health/router.py` | Liveness and readiness endpoints |
 
@@ -45,7 +49,7 @@ Feature folders follow the same shape as they are added: SQLAlchemy models, Pyda
 
 ## Current state
 
-The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. The worker and the API under `/api/v1` are added in later stages.
+The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout and `GET /api/v1/users/me` exist; how passwords and tokens are handled is described in [security.md](security.md). The worker and the other routes are added in later stages.
 
 ## Errors
 

@@ -29,3 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration `0002` creating these tables with their check constraints, unique constraints, the case-insensitive email index, the partial index for due deliveries and the delivery history index.
 - Integration tests for every check constraint, unique constraint and delete rule of the schema.
 - Database documentation with the delivery status diagram.
+- Required `HOOKLINE_JWT_SECRET` setting (at least 32 characters) and the optional `HOOKLINE_ACCESS_TOKEN_MINUTES` and `HOOKLINE_REFRESH_TOKEN_DAYS` settings.
+- Password hashing with bcrypt, with passwords limited to 12 to 128 characters and at most 72 bytes.
+- HS256 JWT access tokens and random refresh tokens stored as SHA-256 hashes.
+- `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh` with refresh token rotation and reuse detection, and `POST /api/v1/auth/logout`.
+- `GET /api/v1/users/me` for the logged-in user.
+- `python -m hookline.cli create-admin` to create the first admin user.
+- Security documentation for passwords and tokens.
