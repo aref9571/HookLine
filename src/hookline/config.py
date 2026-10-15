@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = Field(min_length=32)
     access_token_minutes: int = Field(default=15, ge=1)
     refresh_token_days: int = Field(default=7, ge=1)
+    require_https_targets: bool = True
+    allow_private_targets: bool = False
 
 
 @lru_cache

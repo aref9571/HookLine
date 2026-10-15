@@ -18,10 +18,20 @@ class AppError(Exception):
     status: int = 500
     title: str = "Internal server error"
     headers: dict[str, str] | None = None
+    errors: list[dict[str, str]] | None = None
 
     def __init__(self, detail: str) -> None:
         super().__init__(detail)
         self.detail = detail
+
+
+class InvalidFieldError(AppError):
+    status = 400
+    title = "Invalid request"
+
+    def __init__(self, field: str, message: str) -> None:
+        super().__init__("One or more fields are invalid.")
+        self.errors = [{"field": field, "message": message}]
 
 
 class NotFoundError(AppError):
@@ -74,7 +84,7 @@ def field_name(location: tuple[int | str, ...]) -> str:
 
 
 def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
-    return problem_response(exc.status, exc.title, exc.detail, headers=exc.headers)
+    return problem_response(exc.status, exc.title, exc.detail, exc.errors, exc.headers)
 
 
 def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
