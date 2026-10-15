@@ -32,9 +32,12 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - `GET /health/live`, which returns `{"status": "ok"}`
 - `GET /health/ready`, which checks the database and returns `503` when it cannot be reached
 - A PostgreSQL connection through SQLAlchemy, with Alembic migrations
-- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts, with its constraints and indexes (described in [docs/database.md](docs/database.md)); only users and refresh tokens are used by the API so far
+- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts, with its constraints and indexes (described in [docs/database.md](docs/database.md)); users, refresh tokens and API keys are used by the API so far
 - Login with a JWT access token and a rotating refresh token: `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh` and `POST /api/v1/auth/logout`, with reuse detection for refresh tokens
 - `GET /api/v1/users/me`, which returns the logged-in user
+- `admin` and `member` roles; admins create, list, promote, demote, deactivate and reactivate users with `POST /api/v1/users`, `GET /api/v1/users` and `PATCH /api/v1/users/{id}`
+- API keys for producer applications: `POST /api/v1/api-keys` (the key is shown once), `GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{id}`, and a dependency that authenticates requests with the `X-API-Key` header (used by event intake later)
+- Pagination with `limit` and `offset` on list routes
 - A command to create the first admin user: `python -m hookline.cli create-admin --email ...`
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
 - A Docker Compose file that starts PostgreSQL 17 for local development
@@ -96,7 +99,13 @@ curl -X POST localhost:8000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email": "admin@example.com", "password": "your-password"}'
 curl localhost:8000/api/v1/users/me -H 'Authorization: Bearer <access_token>'
+curl -X POST localhost:8000/api/v1/api-keys \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "local test"}'
 ```
+
+All routes are described in [docs/api.md](docs/api.md).
 
 The interactive API docs are at http://localhost:8000/docs.
 
@@ -113,6 +122,7 @@ The integration tests start their own PostgreSQL container, so Docker must be ru
 
 ## Documentation
 
+- [API](docs/api.md)
 - [Architecture](docs/architecture.md)
 - [Database](docs/database.md)
 - [Development](docs/development.md)

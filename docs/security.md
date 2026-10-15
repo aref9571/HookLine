@@ -1,6 +1,6 @@
 # Security
 
-This document describes how Hookline protects passwords and tokens. Later sections are added as the matching features are built.
+This document describes how Hookline protects passwords, tokens and API keys, and how roles are checked. Later sections are added as the matching features are built.
 
 ## Passwords
 
@@ -28,10 +28,26 @@ This document describes how Hookline protects passwords and tokens. Later sectio
 - `POST /api/v1/auth/logout` revokes the given refresh token and always returns `204`, also when the token is unknown or already revoked.
 - Refresh tokens of deactivated users are rejected.
 
+## Roles
+
+- Every user has the role `admin` or `member`. Admin-only routes use the `require_admin` dependency in `src/hookline/auth/dependencies.py`, which builds on `get_current_user` and returns `403` for members.
+- The role is read from the user row loaded on each request, not from the `role` claim in the access token. A user who is demoted or promoted gets the new permissions at once, without waiting for the access token to expire.
+- An admin cannot deactivate their own account or remove their own admin role (`409`), so an admin cannot lock themselves out by mistake.
+- Deactivating a user revokes all of their refresh tokens in the same transaction.
+
+## API keys
+
+- Producer applications authenticate with an API key in the `X-API-Key` header. A key is `hk_` followed by `secrets.token_urlsafe(32)`, so it contains 32 random bytes (256 bits).
+- The full key is returned once, when it is created. Hookline stores only its SHA-256 hex digest in `api_keys.key_hash`, plus the first 12 characters in `api_keys.prefix`, so a user can recognise a key in the list without the full key being stored.
+- SHA-256 is enough here and bcrypt is not needed. bcrypt is slow on purpose so that guessing a human password from its hash takes a long time. An API key is not chosen by a person: it is 256 bits of random data, so no list of likely values exists and trying every possible key is not feasible, even with a fast hash. A fast hash also matters because the key is checked on every producer request, and it allows looking the key up directly by its hash through the unique index.
+- The `get_api_key_owner` dependency hashes the received key, loads the key together with its user and returns `401` with `WWW-Authenticate: ApiKey` when the header is missing, the key is unknown or revoked, or its owner is deactivated.
+- `last_used_at` is updated at most once a minute per key, so a busy producer does not cause a database write on every request.
+- Revoking a key (`DELETE /api/v1/api-keys/{id}`) sets `revoked_at`; the key stops working at once. Keys of other users return `404`, so their IDs cannot be probed.
+
 ## Clock
 
 The current time comes from the FastAPI dependency `get_now` in `src/hookline/clock.py`, which returns `datetime.now(UTC)`. Tests replace it to check expiry without waiting.
 
 ## Logging
 
-Passwords, password hashes, access tokens, refresh tokens and their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values.
+Passwords, password hashes, access tokens, refresh tokens, API keys and all of their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values, and another test does the same for creating and revoking an API key.

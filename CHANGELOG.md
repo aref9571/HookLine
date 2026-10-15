@@ -36,3 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /api/v1/users/me` for the logged-in user.
 - `python -m hookline.cli create-admin` to create the first admin user.
 - Security documentation for passwords and tokens.
+- `admin` and `member` role checks; members get `403` on admin routes.
+- Admin user management: `POST /api/v1/users`, `GET /api/v1/users` and `PATCH /api/v1/users/{id}`. Admins cannot deactivate or demote themselves, and deactivating a user revokes their refresh tokens.
+- Pagination with `limit` and `offset` and a common page response for list routes.
+- API keys: `POST /api/v1/api-keys` returns the key once, `GET /api/v1/api-keys` lists the caller's keys, `DELETE /api/v1/api-keys/{id}` revokes a key. Only the SHA-256 hash of a key is stored.
+- Authentication of producer requests with the `X-API-Key` header.
+- API documentation in `docs/api.md`, and security documentation for roles and API keys.

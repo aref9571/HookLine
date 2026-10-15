@@ -37,9 +37,11 @@ The code lives in `src/hookline/`. Each feature has its own folder.
 | `cli.py` | Command-line tool with the `create-admin` command |
 | `database.py` | Declarative `Base`, engine creation and the `get_session` dependency |
 | `models.py` | Imports every model, so Alembic and the tests see all tables |
-| `auth/` | Password hashing, JWT access tokens, refresh tokens, login, refresh and logout, and the `get_current_user` dependency |
-| `users/` | User and refresh token models, `GET /api/v1/users/me` and creating users |
-| `api_keys/`, `endpoints/`, `events/`, `deliveries/` | SQLAlchemy models of each feature |
+| `pagination.py` | The `PageParams` dependency for `limit` and `offset`, and the `Page[T]` response model |
+| `auth/` | Password hashing, JWT access tokens, refresh tokens, login, refresh and logout, and the `get_current_user`, `require_admin` and `get_api_key_owner` dependencies |
+| `users/` | User and refresh token models, `GET /api/v1/users/me` and the admin user management routes |
+| `api_keys/` | API key model, creating, listing and revoking keys, and checking a key sent by a producer |
+| `endpoints/`, `events/`, `deliveries/` | SQLAlchemy models of each feature |
 | `errors.py` | Application exceptions and the problem details error handlers |
 | `health/router.py` | Liveness and readiness endpoints |
 
@@ -49,7 +51,7 @@ Feature folders follow the same shape as they are added: SQLAlchemy models, Pyda
 
 ## Current state
 
-The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout and `GET /api/v1/users/me` exist; how passwords and tokens are handled is described in [security.md](security.md). The worker and the other routes are added in later stages.
+The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management and API key management exist; they are listed in [api.md](api.md), and how passwords, tokens, roles and API keys are handled is described in [security.md](security.md). The worker and the other routes are added in later stages.
 
 ## Errors
 
