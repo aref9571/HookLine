@@ -6,8 +6,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from hookline.auth.tokens import decode_access_token
 from hookline.config import AppSettings
 from hookline.database import DbSession
-from hookline.errors import UnauthorizedError
-from hookline.users.models import User
+from hookline.errors import ForbiddenError, UnauthorizedError
+from hookline.users.models import User, UserRole
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -27,3 +27,12 @@ def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def require_admin(user: CurrentUser) -> User:
+    if user.role != UserRole.ADMIN:
+        raise ForbiddenError("This action requires the admin role.")
+    return user
+
+
+AdminUser = Annotated[User, Depends(require_admin)]
