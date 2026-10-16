@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, func, literal, select
+from sqlalchemy import DateTime, Select, func, literal, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -15,9 +15,11 @@ from hookline.config import Settings
 from hookline.deliveries.models import Delivery, DeliveryStatus
 from hookline.endpoints.models import Endpoint
 from hookline.endpoints.schemas import ALL_EVENT_TYPES
-from hookline.errors import ConflictError, ContentTooLargeError
+from hookline.errors import ConflictError, ContentTooLargeError, InvalidFieldError, NotFoundError
 from hookline.events.models import Event
 from hookline.events.schemas import EventCreate
+from hookline.pagination import PageParams
+from hookline.users.models import User, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -121,3 +123,46 @@ def submit_event(
     return SubmittedEvent(
         id=event_id, created_at=now, delivery_count=delivery_count, replayed=False
     )
+
+
+def visible_events(user: User) -> Select[Event]:
+    query = select(Event)
+    if user.role != UserRole.ADMIN:
+        query = query.where(Event.user_id == user.id)
+    return query
+
+
+def list_events(
+    session: Session,
+    user: User,
+    event_type: str | None,
+    created_after: datetime | None,
+    created_before: datetime | None,
+    page: PageParams,
+) -> tuple[list[Event], int]:
+    if created_after is not None and created_before is not None and created_before <= created_after:
+        raise InvalidFieldError("created_before", "must be after created_after")
+    query = visible_events(user)
+    if event_type is not None:
+        query = query.where(Event.event_type == event_type)
+    if created_after is not None:
+        query = query.where(Event.created_at >= created_after)
+    if created_before is not None:
+        query = query.where(Event.created_at < created_before)
+    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    events = session.scalars(
+        query.order_by(Event.created_at.desc(), Event.id).limit(page.limit).offset(page.offset)
+    )
+    return list(events), total
+
+
+def get_event(session: Session, user: User, event_id: uuid.UUID) -> tuple[Event, list[Delivery]]:
+    event = session.scalar(visible_events(user).where(Event.id == event_id))
+    if event is None:
+        raise NotFoundError("Event not found.")
+    deliveries = session.scalars(
+        select(Delivery)
+        .where(Delivery.event_id == event.id)
+        .order_by(Delivery.created_at, Delivery.id)
+    )
+    return event, list(deliveries)
