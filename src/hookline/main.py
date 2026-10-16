@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from hookline.api_keys.router import router as api_keys_router
 from hookline.auth.router import router as auth_router
+from hookline.body_limit import BodySizeLimitMiddleware
 from hookline.config import Settings, get_settings
 from hookline.database import create_engine_from_settings, create_session_factory
 from hookline.endpoints.router import router as endpoints_router
@@ -29,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = create_engine_from_settings(settings)
     app.state.session_factory = create_session_factory(app.state.engine)
+    app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=settings.max_body_bytes)
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(auth_router)

@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     refresh_token_days: int = Field(default=7, ge=1)
     require_https_targets: bool = True
     allow_private_targets: bool = False
+    max_body_bytes: int = Field(default=262144, ge=1)
+    max_payload_bytes: int = Field(default=65536, ge=1)
 
 
 @lru_cache

@@ -147,3 +147,31 @@ def test_settings_read_target_rules_from_environment(monkeypatch: pytest.MonkeyP
 
     assert settings.require_https_targets is False
     assert settings.allow_private_targets is True
+
+
+def test_settings_default_size_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("HOOKLINE_MAX_BODY_BYTES", raising=False)
+    monkeypatch.delenv("HOOKLINE_MAX_PAYLOAD_BYTES", raising=False)
+
+    settings = Settings()
+
+    assert settings.max_body_bytes == 262144
+    assert settings.max_payload_bytes == 65536
+
+
+def test_settings_read_size_limits_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOOKLINE_MAX_BODY_BYTES", "1000")
+    monkeypatch.setenv("HOOKLINE_MAX_PAYLOAD_BYTES", "500")
+
+    settings = Settings()
+
+    assert settings.max_body_bytes == 1000
+    assert settings.max_payload_bytes == 500
+
+
+@pytest.mark.parametrize("name", ["HOOKLINE_MAX_BODY_BYTES", "HOOKLINE_MAX_PAYLOAD_BYTES"])
+def test_settings_reject_size_limits_below_one(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.setenv(name, "0")
+
+    with pytest.raises(ValidationError):
+        Settings()
