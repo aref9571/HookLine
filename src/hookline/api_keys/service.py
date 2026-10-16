@@ -73,7 +73,7 @@ def should_update_last_used(api_key: ApiKey, now: datetime) -> bool:
     return now - api_key.last_used_at >= LAST_USED_UPDATE_INTERVAL
 
 
-def authenticate_api_key(session: Session, plaintext: str, now: datetime) -> User:
+def authenticate_api_key(session: Session, plaintext: str, now: datetime) -> ApiKey:
     row = session.execute(
         select(ApiKey, User)
         .join(User, ApiKey.user_id == User.id)
@@ -87,4 +87,4 @@ def authenticate_api_key(session: Session, plaintext: str, now: datetime) -> Use
     if should_update_last_used(api_key, now):
         api_key.last_used_at = now
         session.commit()
-    return owner
+    return api_key

@@ -59,6 +59,11 @@ class ForbiddenError(AppError):
     title = "Forbidden"
 
 
+class ContentTooLargeError(AppError):
+    status = 413
+    title = HTTPStatus.REQUEST_ENTITY_TOO_LARGE.phrase
+
+
 def problem_response(
     status: int,
     title: str,

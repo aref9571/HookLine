@@ -9,6 +9,7 @@ from hookline.config import Settings, get_settings
 from hookline.database import create_engine_from_settings, create_session_factory
 from hookline.endpoints.router import router as endpoints_router
 from hookline.errors import register_error_handlers
+from hookline.events.router import router as events_router
 from hookline.health.router import router as health_router
 from hookline.users.router import router as users_router
 
@@ -37,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(users_router)
     app.include_router(api_keys_router)
     app.include_router(endpoints_router)
+    app.include_router(events_router)
     return app
 
 

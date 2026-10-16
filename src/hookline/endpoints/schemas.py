@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 SECRET_SHOWN_ONCE_MESSAGE = "Store this secret now. It will not be shown again."
 ALL_EVENT_TYPES = "*"
 
-EventType = Annotated[str, StringConstraints(pattern=r"^(\*|[a-z0-9][a-z0-9_.-]{0,99})$")]
+EVENT_TYPE_PATTERN = r"[a-z0-9][a-z0-9_.-]{0,99}"
+
+EventType = Annotated[str, StringConstraints(pattern=r"^(\*|" + EVENT_TYPE_PATTERN + ")$")]
 EventTypeList = Annotated[list[EventType], Field(min_length=1, max_length=50)]
 Description = Annotated[str, StringConstraints(max_length=255)]
 

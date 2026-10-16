@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from hookline.api_keys.models import ApiKey
 from hookline.api_keys.service import create_api_key
-from hookline.auth.dependencies import ApiKeyOwner
+from hookline.auth.dependencies import CurrentApiKey
 from hookline.clock import get_now
 from hookline.config import Settings
 from hookline.users.models import User
@@ -31,8 +31,8 @@ producer_router = APIRouter()
 
 
 @producer_router.get("/producer-only")
-def read_api_key_owner(owner: ApiKeyOwner) -> dict[str, str]:
-    return {"user_id": str(owner.id)}
+def read_current_api_key(api_key: CurrentApiKey) -> dict[str, str]:
+    return {"api_key_id": str(api_key.id), "user_id": str(api_key.user_id)}
 
 
 @pytest.fixture
@@ -71,13 +71,13 @@ def call(client: TestClient, key: str | None) -> tuple[int, dict[str, str], str]
     return response.status_code, dict(response.headers), response.text
 
 
-def test_valid_key_returns_its_owner(
+def test_valid_key_returns_the_key_and_its_owner(
     producer_client: TestClient, api_key: tuple[ApiKey, str], owner: User
 ) -> None:
     response = producer_client.get("/producer-only", headers={"X-API-Key": api_key[1]})
 
     assert response.status_code == 200
-    assert response.json() == {"user_id": str(owner.id)}
+    assert response.json() == {"api_key_id": str(api_key[0].id), "user_id": str(owner.id)}
 
 
 @pytest.mark.parametrize("key", [None, "", "hk_unknown-key", "Bearer something"])
