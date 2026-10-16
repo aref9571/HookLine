@@ -38,11 +38,13 @@ The code lives in `src/hookline/`. Each feature has its own folder.
 | `database.py` | Declarative `Base`, engine creation and the `get_session` dependency |
 | `models.py` | Imports every model, so Alembic and the tests see all tables |
 | `pagination.py` | The `PageParams` dependency for `limit` and `offset`, and the `Page[T]` response model |
-| `auth/` | Password hashing, JWT access tokens, refresh tokens, login, refresh and logout, and the `get_current_user`, `require_admin` and `get_api_key_owner` dependencies |
+| `auth/` | Password hashing, JWT access tokens, refresh tokens, login, refresh and logout, and the `get_current_user`, `require_admin` and `get_current_api_key` dependencies |
 | `users/` | User and refresh token models, `GET /api/v1/users/me` and the admin user management routes |
 | `api_keys/` | API key model, creating, listing and revoking keys, and checking a key sent by a producer |
 | `endpoints/` | Endpoint model, creating, listing, updating and deleting endpoints, rotating signing secrets, and the URL safety checks in `url_safety.py` |
-| `events/`, `deliveries/` | SQLAlchemy models of each feature |
+| `events/` | Event model, event intake with idempotency keys and delivery creation, and listing and reading events |
+| `deliveries/` | Delivery and delivery attempt models |
+| `body_limit.py` | ASGI middleware that rejects request bodies over `HOOKLINE_MAX_BODY_BYTES` with `413` |
 | `errors.py` | Application exceptions and the problem details error handlers |
 | `health/router.py` | Liveness and readiness endpoints |
 
@@ -52,7 +54,7 @@ Feature folders follow the same shape as they are added: SQLAlchemy models, Pyda
 
 ## Current state
 
-The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management, API key management and endpoint management exist; they are listed in [api.md](api.md), and how passwords, tokens, roles, API keys, endpoint secrets and endpoint URLs are handled is described in [security.md](security.md). The worker and the other routes are added in later stages.
+The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management, API key management, endpoint management, event intake and reading events exist; they are listed in [api.md](api.md), and how passwords, tokens, roles, API keys, endpoint secrets and endpoint URLs are handled is described in [security.md](security.md). Event intake stores each event and its pending deliveries in one transaction, as described in [decision 0003](decisions/0003-event-intake-and-idempotency.md). The worker that sends deliveries and the other routes are added in later stages.
 
 ## Errors
 

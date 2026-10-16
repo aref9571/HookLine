@@ -46,3 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Endpoint URL checks against server-side request forgery: scheme, host, credentials, fragment and length rules, and rejection of `localhost` and of hosts that resolve to private, loopback, link-local, multicast, reserved or unspecified addresses.
 - Endpoint management: `POST /api/v1/endpoints` returns the signing secret once, `GET /api/v1/endpoints` (own endpoints, or all for admins, with an `is_active` filter), `GET`, `PATCH` and `DELETE /api/v1/endpoints/{id}`, and `POST /api/v1/endpoints/{id}/rotate-secret` returns a new secret once.
 - Security documentation for endpoint secrets and the SSRF checks.
+- Settings `HOOKLINE_MAX_BODY_BYTES` (default 262144) and `HOOKLINE_MAX_PAYLOAD_BYTES` (default 65536).
+- Request body size limit: bodies over `HOOKLINE_MAX_BODY_BYTES` get `413`, for a declared `Content-Length` and for bodies that grow too large while they are read.
+- Event intake: `POST /api/v1/events` with an API key stores the event and creates one pending delivery per matching active endpoint in one transaction, and returns `201` with `delivery_count`. Payloads over `HOOKLINE_MAX_PAYLOAD_BYTES` get `413`.
+- Idempotency keys for event intake: the same `Idempotency-Key` and body returns `200` with `Idempotent-Replayed: true`, a different body returns `409`.
+- `GET /api/v1/events` with `event_type`, `created_after` and `created_before` filters, and `GET /api/v1/events/{id}` with the payload and a delivery summary.
+- Decision record 0003 for event intake and idempotency.
+
+### Changed
+
+- The API key dependency is now `get_current_api_key` and returns the key itself, so event intake can store which key sent an event.

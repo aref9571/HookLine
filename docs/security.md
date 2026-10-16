@@ -40,7 +40,7 @@ This document describes how Hookline protects passwords, tokens, API keys and en
 - Producer applications authenticate with an API key in the `X-API-Key` header. A key is `hk_` followed by `secrets.token_urlsafe(32)`, so it contains 32 random bytes (256 bits).
 - The full key is returned once, when it is created. Hookline stores only its SHA-256 hex digest in `api_keys.key_hash`, plus the first 12 characters in `api_keys.prefix`, so a user can recognise a key in the list without the full key being stored.
 - SHA-256 is enough here and bcrypt is not needed. bcrypt is slow on purpose so that guessing a human password from its hash takes a long time. An API key is not chosen by a person: it is 256 bits of random data, so no list of likely values exists and trying every possible key is not feasible, even with a fast hash. A fast hash also matters because the key is checked on every producer request, and it allows looking the key up directly by its hash through the unique index.
-- The `get_api_key_owner` dependency hashes the received key, loads the key together with its user and returns `401` with `WWW-Authenticate: ApiKey` when the header is missing, the key is unknown or revoked, or its owner is deactivated.
+- The `get_current_api_key` dependency hashes the received key, loads the key together with its user and returns `401` with `WWW-Authenticate: ApiKey` when the header is missing, the key is unknown or revoked, or its owner is deactivated.
 - `last_used_at` is updated at most once a minute per key, so a busy producer does not cause a database write on every request.
 - Revoking a key (`DELETE /api/v1/api-keys/{id}`) sets `revoked_at`; the key stops working at once. Keys of other users return `404`, so their IDs cannot be probed.
 
@@ -79,10 +79,15 @@ Limits of these checks:
 - Redirects are a separate path to an internal address; the sender will not follow redirects.
 - Only the address ranges known to Python's `ipaddress` module are blocked. Addresses that are public on the internet but reachable only inside a particular network (for example a company's own public range behind a firewall) are not detected.
 
+## Request and payload size
+
+- `BodySizeLimitMiddleware` in `src/hookline/body_limit.py` rejects any request body over `HOOKLINE_MAX_BODY_BYTES` (default 256 KiB) with `413`. A declared `Content-Length` over the limit is rejected before the body is read. A body without a declared length (chunked) is counted while it is read and rejected as soon as it passes the limit, so a client cannot make the API hold an unlimited body in memory.
+- The event payload is limited separately to `HOOKLINE_MAX_PAYLOAD_BYTES` (default 64 KiB), measured as compact JSON in UTF-8, because the payload is stored and sent to every matching endpoint.
+
 ## Clock
 
 The current time comes from the FastAPI dependency `get_now` in `src/hookline/clock.py`, which returns `datetime.now(UTC)`. Tests replace it to check expiry without waiting.
 
 ## Logging
 
-Passwords, password hashes, access tokens, refresh tokens, API keys and all of their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values, another test does the same for creating and revoking an API key, and a third one checks that endpoint secrets and endpoint URLs are not logged when an endpoint is created or its secret is rotated. Endpoint log lines only contain the endpoint ID and the user ID.
+Passwords, password hashes, access tokens, refresh tokens, API keys and all of their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values, another test does the same for creating and revoking an API key, and a third one checks that endpoint secrets and endpoint URLs are not logged when an endpoint is created or its secret is rotated. Endpoint log lines only contain the endpoint ID and the user ID. Event payloads are never logged; event log lines only contain the event ID and the number of deliveries, and a test checks that neither the payload nor the API key appears in the logs of an intake request.

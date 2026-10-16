@@ -41,6 +41,8 @@ set +a
 | `HOOKLINE_REFRESH_TOKEN_DAYS` | no | `7` | Lifetime of a refresh token in days |
 | `HOOKLINE_REQUIRE_HTTPS_TARGETS` | no | `true` | Endpoint URLs must use `https`; `false` also allows `http` |
 | `HOOKLINE_ALLOW_PRIVATE_TARGETS` | no | `false` | `true` skips the private address checks on endpoint URLs; only for tests and local demos |
+| `HOOKLINE_MAX_BODY_BYTES` | no | `262144` | Largest accepted request body in bytes; larger bodies get `413` |
+| `HOOKLINE_MAX_PAYLOAD_BYTES` | no | `65536` | Largest accepted event payload in bytes, as compact JSON; larger payloads get `413` |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | for Compose | none | Credentials of the local PostgreSQL container |

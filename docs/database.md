@@ -110,7 +110,7 @@ Events submitted by producers. An event is stored once and fans out into one del
 
 - `ck_events_payload_is_object` checks `jsonb_typeof(payload) = 'object'`. Receivers always get a JSON object, never a bare list, string or number.
 - `events_idempotency_uk` is unique on `(user_id, idempotency_key)`. When a producer retries a request with the same `Idempotency-Key`, the database itself refuses a second event, even if two requests arrive at the same moment. PostgreSQL treats NULLs as distinct, so events sent without a key are not limited. The same key may be used by two different users.
-- `request_hash` stores a hash of the request body, so a reused key with a different body can be detected.
+- `request_hash` stores the SHA-256 of the canonical JSON request body, so a reused key with a different body can be detected. How intake uses the constraint is described in [decision 0003](decisions/0003-event-intake-and-idempotency.md).
 - `fk_events_api_key_id_api_keys` uses `on delete set null`: revoking and deleting a key must not delete the history of events it sent.
 - `fk_events_user_id_users` cascades, so deleting a user removes their events.
 

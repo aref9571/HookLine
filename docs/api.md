@@ -9,13 +9,13 @@ All application routes are under `/api/v1`. The health routes are not.
 | Scheme | Header | Used by |
 |---|---|---|
 | JWT | `Authorization: Bearer <access token>` | People: admins and members |
-| API key | `X-API-Key: hk_...` | Producer applications (used by event intake, which is added later) |
+| API key | `X-API-Key: hk_...` | Producer applications, for `POST /api/v1/events` |
 
 Access tokens come from `POST /api/v1/auth/login`. API keys are created with `POST /api/v1/api-keys`.
 
 There are two roles:
 
-- `admin`: may also manage users, and sees and manages the endpoints of all users.
+- `admin`: may also manage users, sees and manages the endpoints of all users, and sees the events of all users.
 - `member`: manages only their own resources.
 
 A missing or invalid token returns `401` with a `WWW-Authenticate: Bearer` header. A missing, unknown or revoked API key, or a key whose owner is deactivated, returns `401` with `WWW-Authenticate: ApiKey`. A member calling an admin route gets `403`. A resource that does not exist or belongs to someone else returns `404`.
@@ -33,6 +33,21 @@ Every error uses RFC 9457 problem details with the media type `application/probl
   "errors": [{"field": "limit", "message": "Input should be greater than or equal to 1"}]
 }
 ```
+
+## Request size
+
+A request body larger than `HOOKLINE_MAX_BODY_BYTES` (default 262144 bytes) returns `413` with problem details, whether the size is declared in `Content-Length` or the body grows too large while it is read:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Request Entity Too Large",
+  "status": 413,
+  "detail": "The request body is too large."
+}
+```
+
+The `title` is the standard reason phrase of the status code from Python's `http.HTTPStatus`.
 
 ## Pagination
 
@@ -66,6 +81,9 @@ List routes accept `limit` (1 to 100, default 20) and `offset` (0 or more, defau
 | PATCH | `/api/v1/endpoints/{id}` | JWT | 200 |
 | DELETE | `/api/v1/endpoints/{id}` | JWT | 204 |
 | POST | `/api/v1/endpoints/{id}/rotate-secret` | JWT | 200 |
+| POST | `/api/v1/events` | API key | 201, or 200 for a replay |
+| GET | `/api/v1/events` | JWT | 200 |
+| GET | `/api/v1/events/{id}` | JWT | 200 |
 
 ### Health
 
@@ -322,3 +340,93 @@ Deletes the endpoint and, through the database, all of its deliveries. Response 
 ### POST /api/v1/endpoints/{id}/rotate-secret
 
 Replaces the signing secret with a new one. No request body. Response `200`: the endpoint with the new `secret` and the same `message` as on creation. The old secret is no longer used. Same `404` rule as above.
+
+### POST /api/v1/events
+
+Producer applications, with an API key in `X-API-Key`. A bearer token is not accepted here. Submits an event for the owner of the key.
+
+```json
+{
+  "event_type": "order.created",
+  "payload": {"order_id": 42, "total": "9.99"}
+}
+```
+
+- `event_type`: starts with a lower-case letter or a digit, followed by up to 99 lower-case letters, digits, `_`, `.` or `-`. `*` is not allowed.
+- `payload`: a JSON object. A list, string, number or `null` returns `400`. Its compact JSON encoding may be at most `HOOKLINE_MAX_PAYLOAD_BYTES` (default 65536) bytes in UTF-8; a larger payload returns `413`.
+- Optional header `Idempotency-Key`: 1 to 100 characters from `A-Z`, `a-z`, `0-9`, `_`, `.`, `:` and `-`. Any other value returns `400` for the field `Idempotency-Key`.
+
+One `pending` delivery is created for every active endpoint of the same user whose `event_types` contain the event type or `*`. The event and its deliveries are saved in one transaction.
+
+Response `201`:
+
+```json
+{
+  "id": "7c1e2b3a-5d4f-4a6b-9c8d-0e1f2a3b4c5d",
+  "created_at": "2026-10-16T09:30:00.123456Z",
+  "delivery_count": 2
+}
+```
+
+Sending the same `Idempotency-Key` again with the same body returns `200`, the same body as the first response (with the current number of deliveries) and the header `Idempotent-Replayed: true`; no new event or delivery is created. Sending the same key with a different body returns `409`. Idempotency keys are per user: two users may use the same key. The order of keys in the JSON body does not matter. How this works is described in [decision 0003](decisions/0003-event-intake-and-idempotency.md).
+
+### GET /api/v1/events
+
+Any logged-in user. Paginated list, newest first. Members see their own events, admins see all events. The payload is not included in the list.
+
+Optional query parameters:
+
+- `event_type`: only events of this type.
+- `created_after`: only events created at or after this time.
+- `created_before`: only events created before this time. When both are given, `created_before` must be later than `created_after`, otherwise `400`.
+
+Times are ISO 8601 with a time zone, for example `2026-10-16T09:00:00Z`. A time without a time zone returns `400`.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    {
+      "id": "7c1e2b3a-5d4f-4a6b-9c8d-0e1f2a3b4c5d",
+      "user_id": "0b9d6a3e-1f4c-4e8a-b2d7-5c8e1a3f6d90",
+      "api_key_id": "5a2f8c1d-3e4b-4f6a-8b9c-1d2e3f4a5b6c",
+      "event_type": "order.created",
+      "idempotency_key": "order-42",
+      "created_at": "2026-10-16T09:30:00.123456Z"
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+### GET /api/v1/events/{id}
+
+Any logged-in user. The event with its payload and a summary of its deliveries.
+
+Response `200`:
+
+```json
+{
+  "id": "7c1e2b3a-5d4f-4a6b-9c8d-0e1f2a3b4c5d",
+  "user_id": "0b9d6a3e-1f4c-4e8a-b2d7-5c8e1a3f6d90",
+  "api_key_id": "5a2f8c1d-3e4b-4f6a-8b9c-1d2e3f4a5b6c",
+  "event_type": "order.created",
+  "idempotency_key": "order-42",
+  "created_at": "2026-10-16T09:30:00.123456Z",
+  "payload": {"order_id": 42, "total": "9.99"},
+  "deliveries": [
+    {
+      "id": "1d2c3b4a-6f5e-4d7c-8b9a-0f1e2d3c4b5a",
+      "endpoint_id": "4f0c2d8e-9b1a-4c7e-8d35-2a6b1e9f0c47",
+      "status": "pending",
+      "attempt_count": 0
+    }
+  ]
+}
+```
+
+An event that does not exist, or belongs to another user when the caller is a member, returns `404`.
+
