@@ -5,6 +5,8 @@ from fastapi import Depends, Request
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+APP_VERSION = "0.1.0"
+
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
 
@@ -21,6 +23,7 @@ class Settings(BaseSettings):
     allow_private_targets: bool = False
     max_body_bytes: int = Field(default=262144, ge=1)
     max_payload_bytes: int = Field(default=65536, ge=1)
+    delivery_timeout_seconds: int = Field(default=10, ge=1)
 
 
 @lru_cache
