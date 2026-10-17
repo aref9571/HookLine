@@ -52,7 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Idempotency keys for event intake: the same `Idempotency-Key` and body returns `200` with `Idempotent-Replayed: true`, a different body returns `409`.
 - `GET /api/v1/events` with `event_type`, `created_after` and `created_before` filters, and `GET /api/v1/events/{id}` with the payload and a delivery summary.
 - Decision record 0003 for event intake and idempotency.
+- Setting `HOOKLINE_DELIVERY_TIMEOUT_SECONDS` (default 10).
+- HMAC-SHA256 payload signing with the `Hookline-Signature: t=<timestamp>,v1=<signature>` header, and a tested `verify_signature` function that shows how receivers check it.
+- Delivery sender: signs and sends one delivery as compact JSON with the `Hookline-Event-Id`, `Hookline-Event-Type`, `Hookline-Attempt` and `Hookline-Signature` headers, does not follow redirects, counts only `2xx` as success, keeps the first 1000 characters of the response, turns timeouts and connection errors into failed results, and checks the target URL again before sending.
+- Signature verification guide in `docs/security.md`, a Python receiver example in the README, and decision record 0004 for payload signing.
 
 ### Changed
 
 - The API key dependency is now `get_current_api_key` and returns the key itself, so event intake can store which key sent an event.
+- httpx2 is now a runtime dependency, because the delivery sender uses it.

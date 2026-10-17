@@ -43,7 +43,7 @@ The code lives in `src/hookline/`. Each feature has its own folder.
 | `api_keys/` | API key model, creating, listing and revoking keys, and checking a key sent by a producer |
 | `endpoints/` | Endpoint model, creating, listing, updating and deleting endpoints, rotating signing secrets, and the URL safety checks in `url_safety.py` |
 | `events/` | Event model, event intake with idempotency keys and delivery creation, and listing and reading events |
-| `deliveries/` | Delivery and delivery attempt models |
+| `deliveries/` | Delivery and delivery attempt models, payload signing (`signing.py`) and the sender that sends one delivery and classifies the result (`sender.py`) |
 | `body_limit.py` | ASGI middleware that rejects request bodies over `HOOKLINE_MAX_BODY_BYTES` with `413` |
 | `errors.py` | Application exceptions and the problem details error handlers |
 | `health/router.py` | Liveness and readiness endpoints |
@@ -54,7 +54,7 @@ Feature folders follow the same shape as they are added: SQLAlchemy models, Pyda
 
 ## Current state
 
-The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management, API key management, endpoint management, event intake and reading events exist; they are listed in [api.md](api.md), and how passwords, tokens, roles, API keys, endpoint secrets and endpoint URLs are handled is described in [security.md](security.md). Event intake stores each event and its pending deliveries in one transaction, as described in [decision 0003](decisions/0003-event-intake-and-idempotency.md). The worker that sends deliveries and the other routes are added in later stages.
+The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management, API key management, endpoint management, event intake and reading events exist; they are listed in [api.md](api.md), and how passwords, tokens, roles, API keys, endpoint secrets and endpoint URLs are handled is described in [security.md](security.md). Event intake stores each event and its pending deliveries in one transaction, as described in [decision 0003](decisions/0003-event-intake-and-idempotency.md). The sender in `deliveries/sender.py` signs and sends a single delivery and returns the result without touching the database; signing is described in [decision 0004](decisions/0004-payload-signing.md). The worker that uses the sender and the other routes are added in later stages.
 
 ## Errors
 

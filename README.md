@@ -43,6 +43,7 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - `GET /api/v1/events` (with `event_type`, `created_after` and `created_before` filters) and `GET /api/v1/events/{id}` with the event's payload and a summary of its deliveries
 - A request body size limit (`413` for bodies over `HOOKLINE_MAX_BODY_BYTES`) and an event payload size limit (`HOOKLINE_MAX_PAYLOAD_BYTES`)
 - Pagination with `limit` and `offset` on list routes
+- HMAC-SHA256 signing of delivery bodies and a sender that signs and sends one delivery and classifies the result (success only for `2xx`, redirects not followed, timeouts and connection errors recorded as failures, the target URL checked again before sending); it is not used by a running process yet, because the worker comes later
 - A command to create the first admin user: `python -m hookline.cli create-admin --email ...`
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
 - A Docker Compose file that starts PostgreSQL 17 for local development
@@ -53,9 +54,10 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - Python 3.12
 - FastAPI, Pydantic v2 and pydantic-settings
 - bcrypt for passwords and PyJWT for access tokens
+- httpx2 for outgoing HTTP requests
 - uvicorn
 - PostgreSQL 17, SQLAlchemy 2 with psycopg 3, Alembic
-- pytest, pytest-cov, httpx2 and Testcontainers for tests
+- pytest, pytest-cov, httpx2 `MockTransport` and Testcontainers for tests
 - ruff and mypy for code quality
 - Docker Compose for the local database
 - GitHub Actions for CI
@@ -88,6 +90,7 @@ Hookline reads its configuration from environment variables. The application doe
 | `HOOKLINE_ALLOW_PRIVATE_TARGETS` | no | `false` | `true` skips the private address checks on endpoint URLs; only for tests and local demos |
 | `HOOKLINE_MAX_BODY_BYTES` | no | `262144` | Largest accepted request body in bytes; larger bodies get `413` |
 | `HOOKLINE_MAX_PAYLOAD_BYTES` | no | `65536` | Largest accepted event payload in bytes, as compact JSON; larger payloads get `413` |
+| `HOOKLINE_DELIVERY_TIMEOUT_SECONDS` | no | `10` | Timeout in seconds for each delivery request |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
@@ -122,6 +125,34 @@ curl -X POST localhost:8000/api/v1/events \
 All routes are described in [docs/api.md](docs/api.md).
 
 The interactive API docs are at http://localhost:8000/docs.
+
+## Verifying webhook signatures
+
+Every delivery carries a `Hookline-Signature: t=<timestamp>,v1=<signature>` header. The signature is the hex HMAC-SHA256 of the timestamp, a dot and the raw request body, with the endpoint's signing secret as the key. A receiver checks it against the raw body bytes, before parsing the JSON, and rejects timestamps more than five minutes old:
+
+```python
+import hashlib
+import hmac
+import time
+
+
+def verify_hookline_signature(secret: str, header: str, body: bytes, tolerance: int = 300) -> bool:
+    values = {}
+    for part in header.split(","):
+        name, _, value = part.strip().partition("=")
+        values[name] = value
+    timestamp = values.get("t", "")
+    signature = values.get("v1", "")
+    if not timestamp.isdecimal() or not signature:
+        return False
+    if abs(time.time() - int(timestamp)) > tolerance:
+        return False
+    message = f"{timestamp}.".encode() + body
+    expected = hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected.encode(), signature.encode())
+```
+
+Call it with the endpoint's secret, the `Hookline-Signature` header and the raw request body, and answer `401` when it returns `False`. The full description is in [docs/security.md](docs/security.md#verifying-signatures) and [decision 0004](docs/decisions/0004-payload-signing.md).
 
 ## Running the checks
 

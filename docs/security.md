@@ -1,6 +1,6 @@
 # Security
 
-This document describes how Hookline protects passwords, tokens, API keys and endpoint secrets, how roles are checked and how subscriber URLs are checked against server-side request forgery. Later sections are added as the matching features are built.
+This document describes how Hookline protects passwords, tokens, API keys and endpoint secrets, how roles are checked, how subscriber URLs are checked against server-side request forgery and how deliveries are signed. Later sections are added as the matching features are built.
 
 ## Passwords
 
@@ -46,7 +46,7 @@ This document describes how Hookline protects passwords, tokens, API keys and en
 
 ## Endpoint signing secrets
 
-- Each endpoint gets a signing secret `whsec_` followed by `secrets.token_urlsafe(32)` (32 random bytes). Deliveries will be signed with it with HMAC-SHA256.
+- Each endpoint gets a signing secret `whsec_` followed by `secrets.token_urlsafe(32)` (32 random bytes). Deliveries are signed with it with HMAC-SHA256, as described in [Verifying signatures](#verifying-signatures).
 - The secret is returned only by `POST /api/v1/endpoints` and `POST /api/v1/endpoints/{id}/rotate-secret`. No other route returns it, and it is never logged.
 - Hookline must read the secret to sign each delivery, so it cannot be stored as a hash like API keys. It is stored as plain text in `endpoints.secret`. Anyone with read access to the database can read the secrets. Encrypting them at rest with a key kept outside the database is possible future work.
 - Rotating replaces the secret at once; the old secret stops being used immediately.
@@ -75,9 +75,51 @@ The resolver is passed in as a function (the FastAPI dependency `get_resolver`, 
 
 Limits of these checks:
 
-- DNS can change after the check. A host name can resolve to a public address when the endpoint is saved and to a private address later (DNS rebinding). The same check will run again right before each delivery, which makes this much harder, but a short time remains between that check and the moment the HTTP client connects and resolves the name again. Closing that gap fully would mean connecting to the checked address directly.
-- Redirects are a separate path to an internal address; the sender will not follow redirects.
+- DNS can change after the check. A host name can resolve to a public address when the endpoint is saved and to a private address later (DNS rebinding). The same check runs again right before each delivery is sent (`send_delivery` in `src/hookline/deliveries/sender.py`), which makes this much harder, but a short time remains between that check and the moment the HTTP client connects and resolves the name again. Closing that gap fully would mean connecting to the checked address directly.
+- Redirects are a separate path to an internal address, so the sender never follows redirects. A `3xx` response counts as a failed attempt with the error `redirect not followed`.
 - Only the address ranges known to Python's `ipaddress` module are blocked. Addresses that are public on the internet but reachable only inside a particular network (for example a company's own public range behind a firewall) are not detected.
+
+## Verifying signatures
+
+Every delivery is a `POST` with a JSON body and these headers:
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` |
+| `User-Agent` | `Hookline/<version>` |
+| `Hookline-Event-Id` | The event ID |
+| `Hookline-Event-Type` | The event type |
+| `Hookline-Attempt` | The attempt number, starting at 1 |
+| `Hookline-Signature` | `t=<timestamp>,v1=<signature>` |
+
+The body is compact JSON (no spaces) with the fields `id`, `type`, `created_at` and `data`, where `data` is the event payload:
+
+```json
+{"id":"0b6f5c3e-8f7a-4f2e-9a51-3c2d1e0f9a87","type":"order.created","created_at":"2026-10-17T11:59:30+00:00","data":{"order_id":42}}
+```
+
+The body is encoded once and the same bytes are signed and sent, so the receiver must check the signature against the raw bytes it received, before parsing the JSON. Parsing and encoding the JSON again can change spaces or key order and break the signature.
+
+How the signature is made (`src/hookline/deliveries/signing.py`):
+
+1. `timestamp` is the time of sending in whole seconds since 1970-01-01 UTC.
+2. The signed message is the timestamp as decimal digits, a dot, and then the raw body bytes: `f"{timestamp}.".encode() + body`.
+3. `signature` is the lower-case hex HMAC-SHA256 of that message, with the endpoint's signing secret (the full string including `whsec_`, encoded as UTF-8) as the key.
+4. The header is `Hookline-Signature: t=<timestamp>,v1=<signature>`.
+
+How a receiver verifies it:
+
+1. Split the header at commas into `name=value` pairs and read `t` and `v1`. Reject the request if either is missing or `t` is not a whole number.
+2. Reject the request if `t` is more than 300 seconds away from the receiver's current time. Including the timestamp in the signed message means an attacker cannot change it, and the time limit means a captured request cannot be replayed later.
+3. Compute the HMAC-SHA256 of `f"{t}.".encode() + body` with the secret and compare it with `v1` using a constant-time comparison (`hmac.compare_digest` in Python), so the comparison time does not reveal how many characters matched.
+
+`verify_signature` in `src/hookline/deliveries/signing.py` does exactly these steps. Hookline does not call it itself; it exists so that the receiver side is written down as code and tested. The README has a short Python example for receivers that follows the same steps.
+
+Other points for receivers:
+
+- The `v1` prefix names the signature scheme, so a different scheme could be added later without breaking existing receivers.
+- A delivery can arrive more than once (for example after a timeout on Hookline's side), with the same `Hookline-Event-Id` and a higher `Hookline-Attempt`. Receivers should use the event ID to ignore duplicates.
+- After the secret is rotated, new deliveries are signed with the new secret only.
 
 ## Request and payload size
 
@@ -90,4 +132,4 @@ The current time comes from the FastAPI dependency `get_now` in `src/hookline/cl
 
 ## Logging
 
-Passwords, password hashes, access tokens, refresh tokens, API keys and all of their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values, another test does the same for creating and revoking an API key, and a third one checks that endpoint secrets and endpoint URLs are not logged when an endpoint is created or its secret is rotated. Endpoint log lines only contain the endpoint ID and the user ID. Event payloads are never logged; event log lines only contain the event ID and the number of deliveries, and a test checks that neither the payload nor the API key appears in the logs of an intake request.
+Passwords, password hashes, access tokens, refresh tokens, API keys and all of their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values, another test does the same for creating and revoking an API key, and a third one checks that endpoint secrets and endpoint URLs are not logged when an endpoint is created or its secret is rotated. Endpoint log lines only contain the endpoint ID and the user ID. Event payloads are never logged; event log lines only contain the event ID and the number of deliveries, and a test checks that neither the payload nor the API key appears in the logs of an intake request. The sender never logs the target URL, the secret, the signature or the body; when a target address is not allowed it logs only the event ID.
