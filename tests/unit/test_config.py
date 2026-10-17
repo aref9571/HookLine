@@ -175,3 +175,22 @@ def test_settings_reject_size_limits_below_one(monkeypatch: pytest.MonkeyPatch, 
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_settings_default_delivery_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("HOOKLINE_DELIVERY_TIMEOUT_SECONDS", raising=False)
+
+    assert Settings().delivery_timeout_seconds == 10
+
+
+def test_settings_read_delivery_timeout_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOOKLINE_DELIVERY_TIMEOUT_SECONDS", "3")
+
+    assert Settings().delivery_timeout_seconds == 3
+
+
+def test_settings_reject_delivery_timeout_below_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOOKLINE_DELIVERY_TIMEOUT_SECONDS", "0")
+
+    with pytest.raises(ValidationError):
+        Settings()
