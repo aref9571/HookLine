@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     max_body_bytes: int = Field(default=262144, ge=1)
     max_payload_bytes: int = Field(default=65536, ge=1)
     delivery_timeout_seconds: int = Field(default=10, ge=1)
+    max_attempts: int = Field(default=8, ge=1)
+    backoff_base_seconds: int = Field(default=10, ge=1)
+    backoff_max_seconds: int = Field(default=3600, ge=1)
+    worker_batch_size: int = Field(default=10, ge=1)
+    worker_poll_seconds: int = Field(default=2, ge=1)
+    worker_lease_seconds: int = Field(default=60, ge=1)
 
 
 @lru_cache
