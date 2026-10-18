@@ -3,17 +3,19 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.orm import Session
 
 from hookline.deliveries.models import Delivery, DeliveryAttempt, DeliveryStatus
 from hookline.endpoints.models import Endpoint
-from hookline.errors import InvalidFieldError, NotFoundError
+from hookline.errors import ConflictError, InvalidFieldError, NotFoundError
 from hookline.events.models import Event
 from hookline.pagination import PageParams
 from hookline.users.models import User, UserRole
 
 logger = logging.getLogger(__name__)
+
+RETRYABLE_STATUSES = [DeliveryStatus.DEAD, DeliveryStatus.FAILED]
 
 
 @dataclass
@@ -87,3 +89,34 @@ def get_delivery_details(session: Session, user: User, delivery_id: uuid.UUID) -
         event_type=event_type,
         attempts=list(delivery.attempts),
     )
+
+
+def retry_delivery(session: Session, user: User, delivery_id: uuid.UUID, now: datetime) -> Delivery:
+    row = session.execute(
+        visible_deliveries(user).add_columns(Endpoint.is_active).where(Delivery.id == delivery_id)
+    ).one_or_none()
+    if row is None:
+        raise NotFoundError("Delivery not found.")
+    delivery, endpoint_is_active = row
+    if not endpoint_is_active:
+        raise ConflictError("The endpoint is disabled.")
+
+    requeued_id = session.scalar(
+        update(Delivery)
+        .where(Delivery.id == delivery.id, Delivery.status.in_(RETRYABLE_STATUSES))
+        .values(
+            status=DeliveryStatus.PENDING,
+            next_attempt_at=now,
+            locked_until=None,
+            attempt_count=0,
+            updated_at=now,
+        )
+        .returning(Delivery.id)
+    )
+    if requeued_id is None:
+        session.rollback()
+        raise ConflictError("Only failed or dead deliveries can be retried.")
+    session.commit()
+    session.refresh(delivery)
+    logger.info("Delivery %s requeued by user %s", delivery.id, user.id)
+    return delivery

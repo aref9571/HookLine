@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from pydantic import AwareDatetime
 
 from hookline.auth.dependencies import CurrentUser
+from hookline.clock import Now
 from hookline.database import DbSession
 from hookline.deliveries import service
 from hookline.deliveries.models import DeliveryStatus
@@ -49,3 +50,10 @@ def read_delivery(delivery_id: uuid.UUID, db: DbSession, user: CurrentUser) -> D
         event_type=details.event_type,
         attempts=[AttemptRead.model_validate(attempt) for attempt in details.attempts],
     )
+
+
+@router.post("/{delivery_id}/retry")
+def retry_delivery(
+    delivery_id: uuid.UUID, db: DbSession, user: CurrentUser, now: Now
+) -> DeliveryRead:
+    return DeliveryRead.model_validate(service.retry_delivery(db, user, delivery_id, now))

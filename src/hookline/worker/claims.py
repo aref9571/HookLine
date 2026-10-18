@@ -20,6 +20,7 @@ ENDPOINT_DISABLED_ERROR = "endpoint disabled"
 class ClaimedDelivery:
     delivery_id: uuid.UUID
     attempt_number: int
+    attempt_count: int
     locked_until: datetime
     url: str
     secret: str
@@ -82,6 +83,7 @@ def claim_due_deliveries(
         select(
             Delivery.id.label("delivery_id"),
             next_attempt_number().label("attempt_number"),
+            Delivery.attempt_count,
             Endpoint.is_active,
             Endpoint.url,
             Endpoint.secret,
@@ -109,6 +111,7 @@ def claim_due_deliveries(
             ClaimedDelivery(
                 delivery_id=row.delivery_id,
                 attempt_number=row.attempt_number,
+                attempt_count=row.attempt_count,
                 locked_until=locked_until,
                 url=row.url,
                 secret=row.secret,

@@ -48,13 +48,14 @@ def result_values(
         "last_status_code": result.status_code,
         "last_error": result.error,
     }
+    attempts_in_run = claimed.attempt_count + 1
     if result.succeeded:
         values["status"] = DeliveryStatus.SUCCEEDED
-    elif claimed.attempt_number >= settings.max_attempts:
+    elif attempts_in_run >= settings.max_attempts:
         values["status"] = DeliveryStatus.DEAD
     else:
         delay = next_delay_seconds(
-            claimed.attempt_number,
+            attempts_in_run,
             settings.backoff_base_seconds,
             settings.backoff_max_seconds,
             random_fraction,

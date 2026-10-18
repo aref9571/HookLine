@@ -188,6 +188,7 @@ def test_claim_returns_plain_data_and_starts_a_lease(
         ClaimedDelivery(
             delivery_id=delivery.id,
             attempt_number=1,
+            attempt_count=0,
             locked_until=NOW + timedelta(seconds=LEASE_SECONDS),
             url=TARGET_URL,
             secret=SECRET,
