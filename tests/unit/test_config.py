@@ -1,7 +1,9 @@
+import logging
+
 import pytest
 from pydantic import ValidationError
 
-from hookline.config import Settings, get_settings
+from hookline.config import Settings, configure_logging, get_settings
 from hookline.main import create_app
 
 
@@ -194,3 +196,50 @@ def test_settings_reject_delivery_timeout_below_one(monkeypatch: pytest.MonkeyPa
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+WORKER_DEFAULTS = {
+    "max_attempts": 8,
+    "backoff_base_seconds": 10,
+    "backoff_max_seconds": 3600,
+    "worker_batch_size": 10,
+    "worker_poll_seconds": 2,
+    "worker_lease_seconds": 60,
+}
+
+
+def test_settings_default_worker_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in WORKER_DEFAULTS:
+        monkeypatch.delenv("HOOKLINE_" + name.upper(), raising=False)
+
+    settings = Settings()
+
+    for name, expected in WORKER_DEFAULTS.items():
+        assert getattr(settings, name) == expected
+
+
+def test_settings_read_worker_values_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in WORKER_DEFAULTS:
+        monkeypatch.setenv("HOOKLINE_" + name.upper(), "5")
+
+    settings = Settings()
+
+    for name in WORKER_DEFAULTS:
+        assert getattr(settings, name) == 5
+
+
+@pytest.mark.parametrize("name", list(WORKER_DEFAULTS))
+def test_settings_reject_worker_values_below_one(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    monkeypatch.setenv("HOOKLINE_" + name.upper(), "0")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_configure_logging_keeps_http_client_request_lines_out_of_the_logs() -> None:
+    configure_logging("DEBUG")
+
+    assert not logging.getLogger("httpx2").isEnabledFor(logging.INFO)
+    assert logging.getLogger("httpx2").isEnabledFor(logging.WARNING)
