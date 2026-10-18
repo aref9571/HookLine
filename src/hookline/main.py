@@ -1,23 +1,15 @@
-import logging
-
 from fastapi import FastAPI
 
 from hookline.api_keys.router import router as api_keys_router
 from hookline.auth.router import router as auth_router
 from hookline.body_limit import BodySizeLimitMiddleware
-from hookline.config import APP_VERSION, Settings, get_settings
+from hookline.config import APP_VERSION, Settings, configure_logging, get_settings
 from hookline.database import create_engine_from_settings, create_session_factory
 from hookline.endpoints.router import router as endpoints_router
 from hookline.errors import register_error_handlers
 from hookline.events.router import router as events_router
 from hookline.health.router import router as health_router
 from hookline.users.router import router as users_router
-
-LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
-
-
-def configure_logging(level: str) -> None:
-    logging.basicConfig(level=level, format=LOG_FORMAT)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

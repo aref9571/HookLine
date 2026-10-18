@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Annotated, Literal
 
@@ -6,6 +7,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_VERSION = "0.1.0"
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
@@ -43,3 +45,8 @@ def get_app_settings(request: Request) -> Settings:
 
 
 AppSettings = Annotated[Settings, Depends(get_app_settings)]
+
+
+def configure_logging(level: str) -> None:
+    logging.basicConfig(level=level, format=LOG_FORMAT)
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
