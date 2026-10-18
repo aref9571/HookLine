@@ -32,7 +32,7 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - `GET /health/live`, which returns `{"status": "ok"}`
 - `GET /health/ready`, which checks the database and returns `503` when it cannot be reached
 - A PostgreSQL connection through SQLAlchemy, with Alembic migrations
-- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts, with its constraints and indexes (described in [docs/database.md](docs/database.md)); users, refresh tokens, API keys, endpoints, events and deliveries are used by the API so far
+- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts, with its constraints and indexes (described in [docs/database.md](docs/database.md))
 - Login with a JWT access token and a rotating refresh token: `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh` and `POST /api/v1/auth/logout`, with reuse detection for refresh tokens
 - `GET /api/v1/users/me`, which returns the logged-in user
 - `admin` and `member` roles; admins create, list, promote, demote, deactivate and reactivate users with `POST /api/v1/users`, `GET /api/v1/users` and `PATCH /api/v1/users/{id}`
@@ -43,7 +43,8 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - `GET /api/v1/events` (with `event_type`, `created_after` and `created_before` filters) and `GET /api/v1/events/{id}` with the event's payload and a summary of its deliveries
 - A request body size limit (`413` for bodies over `HOOKLINE_MAX_BODY_BYTES`) and an event payload size limit (`HOOKLINE_MAX_PAYLOAD_BYTES`)
 - Pagination with `limit` and `offset` on list routes
-- HMAC-SHA256 signing of delivery bodies and a sender that signs and sends one delivery and classifies the result (success only for `2xx`, redirects not followed, timeouts and connection errors recorded as failures, the target URL checked again before sending); it is not used by a running process yet, because the worker comes later
+- HMAC-SHA256 signing of delivery bodies and a sender that signs and sends one delivery and classifies the result (success only for `2xx`, redirects not followed, timeouts and connection errors recorded as failures, the target URL checked again before sending)
+- A delivery worker, `python -m hookline.worker`, that claims due deliveries from PostgreSQL with `FOR UPDATE SKIP LOCKED` and a lease, sends them, records every attempt, retries failures with exponential backoff and jitter, and marks a delivery `dead` after `HOOKLINE_MAX_ATTEMPTS` attempts; several workers can run at once, and the worker stops cleanly on Ctrl+C or `SIGTERM` (described in [docs/architecture.md](docs/architecture.md#delivery-worker))
 - A command to create the first admin user: `python -m hookline.cli create-admin --email ...`
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
 - A Docker Compose file that starts PostgreSQL 17 for local development
@@ -91,6 +92,12 @@ Hookline reads its configuration from environment variables. The application doe
 | `HOOKLINE_MAX_BODY_BYTES` | no | `262144` | Largest accepted request body in bytes; larger bodies get `413` |
 | `HOOKLINE_MAX_PAYLOAD_BYTES` | no | `65536` | Largest accepted event payload in bytes, as compact JSON; larger payloads get `413` |
 | `HOOKLINE_DELIVERY_TIMEOUT_SECONDS` | no | `10` | Timeout in seconds for each delivery request |
+| `HOOKLINE_MAX_ATTEMPTS` | no | `8` | Attempts before a delivery becomes `dead` |
+| `HOOKLINE_BACKOFF_BASE_SECONDS` | no | `10` | Delay before the second attempt, doubled for each later attempt (before jitter) |
+| `HOOKLINE_BACKOFF_MAX_SECONDS` | no | `3600` | Longest delay between two attempts (before jitter) |
+| `HOOKLINE_WORKER_BATCH_SIZE` | no | `10` | Deliveries a worker claims at once |
+| `HOOKLINE_WORKER_POLL_SECONDS` | no | `2` | Seconds a worker waits when nothing is due |
+| `HOOKLINE_WORKER_LEASE_SECONDS` | no | `60` | How long a claimed delivery stays reserved for one worker |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
@@ -102,6 +109,12 @@ alembic upgrade head
 python -m hookline.cli create-admin --email admin@example.com
 uvicorn hookline.main:app --reload
 curl localhost:8000/health/ready
+```
+
+In a second shell with the same environment variables, start the worker that sends the deliveries:
+
+```bash
+python -m hookline.worker
 ```
 
 `create-admin` asks for the password, or reads it from `HOOKLINE_ADMIN_PASSWORD`. Then log in and call an authenticated route:
@@ -152,7 +165,7 @@ def verify_hookline_signature(secret: str, header: str, body: bytes, tolerance: 
     return hmac.compare_digest(expected.encode(), signature.encode())
 ```
 
-Call it with the endpoint's secret, the `Hookline-Signature` header and the raw request body, and answer `401` when it returns `False`. The full description is in [docs/security.md](docs/security.md#verifying-signatures) and [decision 0004](docs/decisions/0004-payload-signing.md).
+Call it with the endpoint's secret, the `Hookline-Signature` header and the raw request body, and answer `401` when it returns `False`. Hookline delivers at least once, so the same event can arrive more than once; use the `Hookline-Event-Id` header to ignore events you have already processed. The full description is in [docs/security.md](docs/security.md#verifying-signatures) and [decision 0004](docs/decisions/0004-payload-signing.md).
 
 ## Running the checks
 

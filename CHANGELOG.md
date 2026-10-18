@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HMAC-SHA256 payload signing with the `Hookline-Signature: t=<timestamp>,v1=<signature>` header, and a tested `verify_signature` function that shows how receivers check it.
 - Delivery sender: signs and sends one delivery as compact JSON with the `Hookline-Event-Id`, `Hookline-Event-Type`, `Hookline-Attempt` and `Hookline-Signature` headers, does not follow redirects, counts only `2xx` as success, keeps the first 1000 characters of the response, turns timeouts and connection errors into failed results, and checks the target URL again before sending.
 - Signature verification guide in `docs/security.md`, a Python receiver example in the README, and decision record 0004 for payload signing.
+- Settings `HOOKLINE_MAX_ATTEMPTS` (default 8), `HOOKLINE_BACKOFF_BASE_SECONDS` (10), `HOOKLINE_BACKOFF_MAX_SECONDS` (3600), `HOOKLINE_WORKER_BATCH_SIZE` (10), `HOOKLINE_WORKER_POLL_SECONDS` (2) and `HOOKLINE_WORKER_LEASE_SECONDS` (60).
+- Exponential backoff with jitter for failed deliveries.
+- Delivery worker `python -m hookline.worker`: claims due deliveries with `FOR UPDATE SKIP LOCKED` and a lease, recovers deliveries whose lease expired, sends them without an open transaction, records every attempt, retries failures, marks deliveries `dead` after the maximum number of attempts or when their endpoint is deactivated, ignores results from a worker whose lease was taken over, and stops cleanly on `SIGTERM` or Ctrl+C.
+- Decision record 0005 for the PostgreSQL job queue, and a "Delivery worker" section in the architecture documentation.
 
 ### Changed
 

@@ -160,7 +160,7 @@ One row per HTTP request the worker made for a delivery. This is the delivery hi
 
 ## Indexes and the queries that use them
 
-The API routes and the worker that run these queries are added in later stages; the indexes exist from the start so the queries are written against them.
+The delivery history routes that use some of these indexes are added in a later stage; the indexes exist from the start so the queries are written against them.
 
 | Index | Columns | Used by |
 |---|---|---|
@@ -181,10 +181,13 @@ Primary key indexes are not listed. No other foreign key column has its own inde
 
 ```
 pending ──► in_progress ──► succeeded
-                │
-                ├──► failed ──► in_progress (next attempt)
-                │
-                └──► dead ──► pending (manual retry)
+   │            │  ▲
+   │            │  └── in_progress (lease expired, claimed again)
+   │            ├──► failed ──► in_progress (next attempt)
+   │            │
+   │            └──► dead ──► pending (manual retry)
+   │
+   └──► dead (endpoint disabled)
 ```
 
 | Status | Meaning |
@@ -193,7 +196,9 @@ pending ──► in_progress ──► succeeded
 | `in_progress` | Claimed by a worker; the claim expires at `locked_until` |
 | `succeeded` | The endpoint answered with a success status |
 | `failed` | An attempt failed; the next one is due at `next_attempt_at` |
-| `dead` | The maximum number of attempts was reached; only a manual retry sends it again |
+| `dead` | The maximum number of attempts was reached, or the endpoint was deactivated before the delivery was sent (`last_error` is `endpoint disabled`); only a manual retry sends it again |
+
+The worker's claim also picks up `in_progress` deliveries whose lease has expired, and a `failed` delivery whose endpoint has been deactivated becomes `dead` the same way as a `pending` one. How the worker moves deliveries between these states is described in [architecture.md](architecture.md#delivery-worker).
 
 ## Deleting data
 
