@@ -60,8 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exponential backoff with jitter for failed deliveries.
 - Delivery worker `python -m hookline.worker`: claims due deliveries with `FOR UPDATE SKIP LOCKED` and a lease, recovers deliveries whose lease expired, sends them without an open transaction, records every attempt, retries failures, marks deliveries `dead` after the maximum number of attempts or when their endpoint is deactivated, ignores results from a worker whose lease was taken over, and stops cleanly on `SIGTERM` or Ctrl+C.
 - Decision record 0005 for the PostgreSQL job queue, and a "Delivery worker" section in the architecture documentation.
+- Delivery history: `GET /api/v1/deliveries` with `status`, `endpoint_id`, `event_id`, `created_after` and `created_before` filters (members see the deliveries of their own endpoints, admins all), and `GET /api/v1/deliveries/{id}` with the endpoint URL, the event type and every attempt in order.
+- Manual retry: `POST /api/v1/deliveries/{id}/retry` requeues a `failed` or `dead` delivery for a fresh run of attempts and keeps its old attempts; other statuses and deactivated endpoints get `409`, and of two simultaneous retries only one succeeds.
+- API documentation for events and deliveries, including how attempt numbers continue after a retry.
 
 ### Changed
 
 - The API key dependency is now `get_current_api_key` and returns the key itself, so event intake can store which key sent an event.
 - httpx2 is now a runtime dependency, because the delivery sender uses it.
+- The worker decides when a delivery is `dead` from `attempt_count` (attempts since creation or the last manual retry) instead of the attempt number, and the retry delay is based on the same count.

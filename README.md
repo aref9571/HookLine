@@ -45,6 +45,7 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - Pagination with `limit` and `offset` on list routes
 - HMAC-SHA256 signing of delivery bodies and a sender that signs and sends one delivery and classifies the result (success only for `2xx`, redirects not followed, timeouts and connection errors recorded as failures, the target URL checked again before sending)
 - A delivery worker, `python -m hookline.worker`, that claims due deliveries from PostgreSQL with `FOR UPDATE SKIP LOCKED` and a lease, sends them, records every attempt, retries failures with exponential backoff and jitter, and marks a delivery `dead` after `HOOKLINE_MAX_ATTEMPTS` attempts; several workers can run at once, and the worker stops cleanly on Ctrl+C or `SIGTERM` (described in [docs/architecture.md](docs/architecture.md#delivery-worker))
+- Delivery history and manual retry: `GET /api/v1/deliveries` (with `status`, `endpoint_id`, `event_id`, `created_after` and `created_before` filters), `GET /api/v1/deliveries/{id}` with every attempt, and `POST /api/v1/deliveries/{id}/retry`, which requeues a `failed` or `dead` delivery for a fresh run of attempts while keeping the old attempts as history
 - A command to create the first admin user: `python -m hookline.cli create-admin --email ...`
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
 - A Docker Compose file that starts PostgreSQL 17 for local development

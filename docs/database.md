@@ -160,8 +160,6 @@ One row per HTTP request the worker made for a delivery. This is the delivery hi
 
 ## Indexes and the queries that use them
 
-The delivery history routes that use some of these indexes are added in a later stage; the indexes exist from the start so the queries are written against them.
-
 | Index | Columns | Used by |
 |---|---|---|
 | `uq_users_email_lower` | `lower(email)`, unique | Finding a user by email at login |
@@ -170,7 +168,7 @@ The delivery history routes that use some of these indexes are added in a later 
 | `events_idempotency_uk` | `(user_id, idempotency_key)`, unique | Finding an earlier event with the same idempotency key |
 | `uq_deliveries_event_id_endpoint_id` | `(event_id, endpoint_id)`, unique | Listing the deliveries of one event |
 | `ix_deliveries_due` | `next_attempt_at` where `status IN ('pending', 'failed')` | The worker's query for deliveries that are due |
-| `ix_deliveries_endpoint_id_created_at` | `(endpoint_id, created_at DESC)` | Delivery history of one endpoint, newest first |
+| `ix_deliveries_endpoint_id_created_at` | `(endpoint_id, created_at DESC)` | `GET /api/v1/deliveries?endpoint_id=...`: the delivery history of one endpoint, newest first |
 | `uq_delivery_attempts_delivery_id_attempt_number` | `(delivery_id, attempt_number)`, unique | Loading the attempts of one delivery in order |
 
 `ix_deliveries_due` is a partial index: it only contains deliveries the worker may still pick up. Succeeded and dead deliveries, which will be most of the table over time, are not in it, so the worker's query stays fast as history grows.
@@ -184,7 +182,7 @@ pending ──► in_progress ──► succeeded
    │            │  ▲
    │            │  └── in_progress (lease expired, claimed again)
    │            ├──► failed ──► in_progress (next attempt)
-   │            │
+   │            │       └──► pending (manual retry)
    │            └──► dead ──► pending (manual retry)
    │
    └──► dead (endpoint disabled)
@@ -195,10 +193,10 @@ pending ──► in_progress ──► succeeded
 | `pending` | Created and never tried |
 | `in_progress` | Claimed by a worker; the claim expires at `locked_until` |
 | `succeeded` | The endpoint answered with a success status |
-| `failed` | An attempt failed; the next one is due at `next_attempt_at` |
+| `failed` | An attempt failed; the next one is due at `next_attempt_at`, or a manual retry makes it due at once |
 | `dead` | The maximum number of attempts was reached, or the endpoint was deactivated before the delivery was sent (`last_error` is `endpoint disabled`); only a manual retry sends it again |
 
-The worker's claim also picks up `in_progress` deliveries whose lease has expired, and a `failed` delivery whose endpoint has been deactivated becomes `dead` the same way as a `pending` one. How the worker moves deliveries between these states is described in [architecture.md](architecture.md#delivery-worker).
+The worker's claim also picks up `in_progress` deliveries whose lease has expired, and a `failed` delivery whose endpoint has been deactivated becomes `dead` the same way as a `pending` one. How the worker moves deliveries between these states is described in [architecture.md](architecture.md#delivery-worker). A manual retry (`POST /api/v1/deliveries/{id}/retry`) sets a `failed` or `dead` delivery back to `pending` and `attempt_count` to `0`; its rows in `delivery_attempts` are kept, and new attempts continue after the highest `attempt_number`.
 
 ## Deleting data
 

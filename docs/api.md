@@ -15,7 +15,7 @@ Access tokens come from `POST /api/v1/auth/login`. API keys are created with `PO
 
 There are two roles:
 
-- `admin`: may also manage users, sees and manages the endpoints of all users, and sees the events of all users.
+- `admin`: may also manage users, sees and manages the endpoints of all users, sees the events of all users, and sees and retries the deliveries of all users.
 - `member`: manages only their own resources.
 
 A missing or invalid token returns `401` with a `WWW-Authenticate: Bearer` header. A missing, unknown or revoked API key, or a key whose owner is deactivated, returns `401` with `WWW-Authenticate: ApiKey`. A member calling an admin route gets `403`. A resource that does not exist or belongs to someone else returns `404`.
@@ -84,6 +84,9 @@ List routes accept `limit` (1 to 100, default 20) and `offset` (0 or more, defau
 | POST | `/api/v1/events` | API key | 201, or 200 for a replay |
 | GET | `/api/v1/events` | JWT | 200 |
 | GET | `/api/v1/events/{id}` | JWT | 200 |
+| GET | `/api/v1/deliveries` | JWT | 200 |
+| GET | `/api/v1/deliveries/{id}` | JWT | 200 |
+| POST | `/api/v1/deliveries/{id}/retry` | JWT | 200 |
 
 ### Health
 
@@ -429,4 +432,113 @@ Response `200`:
 ```
 
 An event that does not exist, or belongs to another user when the caller is a member, returns `404`.
+
+### GET /api/v1/deliveries
+
+Any logged-in user. Paginated list of deliveries, newest first by `created_at`, then by `id`. Members see the deliveries of their own endpoints, admins see all deliveries.
+
+Optional query parameters:
+
+- `status`: one of `pending`, `in_progress`, `succeeded`, `failed` and `dead`. Any other value returns `400`.
+- `endpoint_id`: only deliveries to this endpoint.
+- `event_id`: only deliveries of this event.
+- `created_after`: only deliveries created at or after this time.
+- `created_before`: only deliveries created before this time. When both are given, `created_before` must be later than `created_after`, otherwise `400`.
+
+Times use the same ISO 8601 format with a time zone as `GET /api/v1/events`. Filtering by the ID of another user's endpoint or event returns an empty list for a member, not an error.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    {
+      "id": "1d2c3b4a-6f5e-4d7c-8b9a-0f1e2d3c4b5a",
+      "event_id": "7c1e2b3a-5d4f-4a6b-9c8d-0e1f2a3b4c5d",
+      "endpoint_id": "4f0c2d8e-9b1a-4c7e-8d35-2a6b1e9f0c47",
+      "status": "failed",
+      "attempt_count": 2,
+      "next_attempt_at": "2026-10-16T09:31:12Z",
+      "locked_until": null,
+      "last_status_code": 503,
+      "last_error": null,
+      "created_at": "2026-10-16T09:30:00.123456Z",
+      "updated_at": "2026-10-16T09:30:52.418310Z"
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+- `attempt_count`: the attempts made since the delivery was created or last retried by hand. It decides when the delivery becomes `dead`.
+- `next_attempt_at`: when the worker may try a `pending` or `failed` delivery next.
+- `locked_until`: the end of the current worker lease while the delivery is `in_progress`, otherwise `null`.
+- `last_status_code` and `last_error`: the result of the latest attempt. `last_error` is `null` when the status code explains the failure, and holds a short reason such as `timeout`, `connection error`, `redirect not followed`, `target address not allowed` or `endpoint disabled` otherwise.
+
+### GET /api/v1/deliveries/{id}
+
+Any logged-in user. The delivery in the same shape as a list item, plus the endpoint's URL, the event type and every attempt ordered by `attempt_number`. The payload and the endpoint secret are not included.
+
+Response `200`:
+
+```json
+{
+  "id": "1d2c3b4a-6f5e-4d7c-8b9a-0f1e2d3c4b5a",
+  "event_id": "7c1e2b3a-5d4f-4a6b-9c8d-0e1f2a3b4c5d",
+  "endpoint_id": "4f0c2d8e-9b1a-4c7e-8d35-2a6b1e9f0c47",
+  "status": "failed",
+  "attempt_count": 2,
+  "next_attempt_at": "2026-10-16T09:31:12Z",
+  "locked_until": null,
+  "last_status_code": 503,
+  "last_error": null,
+  "created_at": "2026-10-16T09:30:00.123456Z",
+  "updated_at": "2026-10-16T09:30:52.418310Z",
+  "endpoint_url": "https://hooks.example.com/webhook",
+  "event_type": "order.created",
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "status_code": null,
+      "error": "timeout",
+      "duration_ms": 10004,
+      "response_excerpt": null,
+      "attempted_at": "2026-10-16T09:30:01.002113Z"
+    },
+    {
+      "attempt_number": 2,
+      "status_code": 503,
+      "error": null,
+      "duration_ms": 41,
+      "response_excerpt": "Service Unavailable",
+      "attempted_at": "2026-10-16T09:30:52.418310Z"
+    }
+  ]
+}
+```
+
+`response_excerpt` holds at most the first 1000 characters of the receiver's answer. A delivery that does not exist, or belongs to another user's endpoint when the caller is a member, returns `404`.
+
+### POST /api/v1/deliveries/{id}/retry
+
+Any logged-in user, for deliveries they may see. Requeues a `dead` or `failed` delivery so the worker sends it again. No request body.
+
+The delivery is set to `pending` with `next_attempt_at` set to the current time, `locked_until` cleared and `attempt_count` reset to `0`, so it gets a fresh run of up to `HOOKLINE_MAX_ATTEMPTS` attempts. `last_status_code` and `last_error` keep the result of the latest attempt until the next one.
+
+Response `200`: the delivery in the same shape as a list item.
+
+| Situation | Status |
+|---|---|
+| The delivery is `dead` or `failed` and its endpoint is active | `200` |
+| The delivery is `pending`, `in_progress` or `succeeded` | `409`, `"detail": "Only failed or dead deliveries can be retried."` |
+| The endpoint is deactivated | `409`, `"detail": "The endpoint is disabled."` |
+| The delivery does not exist, or belongs to another user's endpoint for a member | `404` |
+
+The change is made with one `UPDATE ... WHERE status IN ('dead', 'failed')`. When two retries for the same delivery arrive at the same time, only one of them finds the delivery still `dead` or `failed`: one gets `200` and the other `409`.
+
+#### Attempt numbers after a retry
+
+Old attempts stay in the history; a retry never deletes or renumbers them. New attempts continue the numbering: the next `attempt_number` is always the highest existing number for that delivery plus one, never `attempt_count + 1`. For example, a delivery that became `dead` after attempts 1, 2 and 3 and is then retried gets attempt 4 next, with `attempt_count` 1. The `Hookline-Attempt` header sent to the receiver carries the same number. `attempt_count` alone decides when the delivery becomes `dead` again, and the retry delay starts again from `HOOKLINE_BACKOFF_BASE_SECONDS`.
 

@@ -12,7 +12,7 @@ Every delivery row is a job: send one event to one endpoint, retry it later if i
 - A worker claims due deliveries with one query: deliveries that are `pending` or `failed` with `next_attempt_at <= now`, or `in_progress` with an expired lease (`locked_until < now`), ordered by `next_attempt_at, id`, limited to `HOOKLINE_WORKER_BATCH_SIZE`, with `FOR UPDATE OF deliveries SKIP LOCKED`.
 - In the same transaction the claimed rows are set to `in_progress` with a lease, `locked_until = now + HOOKLINE_WORKER_LEASE_SECONDS`, and the transaction is committed at once. The worker gets plain data back (URL, secret, event and attempt number), not ORM objects.
 - The HTTP request is sent with no database transaction open. Afterwards a new short transaction inserts a `delivery_attempts` row and updates the delivery, but only if it is still `in_progress` with the same `locked_until` this worker set. If the lease was taken over in the meantime, nothing is written and a warning is logged.
-- Failed attempts are retried after `min(HOOKLINE_BACKOFF_MAX_SECONDS, HOOKLINE_BACKOFF_BASE_SECONDS * 2 ** (attempt - 1))` seconds, multiplied by a random factor between 0.5 and 1.0. After `HOOKLINE_MAX_ATTEMPTS` failed attempts the delivery becomes `dead`.
+- Failed attempts are retried after `min(HOOKLINE_BACKOFF_MAX_SECONDS, HOOKLINE_BACKOFF_BASE_SECONDS * 2 ** (attempt - 1))` seconds, multiplied by a random factor between 0.5 and 1.0. After `HOOKLINE_MAX_ATTEMPTS` failed attempts the delivery becomes `dead`. `attempt_count` counts these attempts and is reset to `0` by a manual retry, while the attempt number always continues from the highest recorded one.
 
 ### How leases work
 
