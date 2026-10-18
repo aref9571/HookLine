@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from hookline.config import Settings
 from hookline.database import create_session_factory
 from hookline.deliveries.models import Delivery, DeliveryAttempt, DeliveryStatus
+from hookline.deliveries.service import retry_delivery
 from hookline.deliveries.signing import verify_signature
 from hookline.endpoints.models import Endpoint
 from hookline.endpoints.url_safety import get_resolver
@@ -333,6 +334,114 @@ def test_attempt_number_follows_the_highest_existing_attempt(
     [claimed] = claim(session_factory, NOW)
 
     assert claimed.attempt_number == 3
+
+
+def test_attempt_count_decides_when_a_delivery_is_dead(
+    db_session: Session,
+    endpoint: Endpoint,
+    session_factory: sessionmaker[Session],
+    worker_settings: Settings,
+) -> None:
+    delivery = add_delivery(db_session, endpoint, status=DeliveryStatus.FAILED)
+    for attempt_number in [1, 2, 3, 4]:
+        add_attempt(db_session, delivery, attempt_number)
+
+    [claimed] = claim(session_factory, NOW)
+    process(session_factory, receiver(answer(500), []), claimed, worker_settings, NOW)
+
+    stored = load(db_session, delivery.id)
+    assert claimed.attempt_number == 5
+    assert claimed.attempt_count == 0
+    assert stored.status == DeliveryStatus.FAILED
+    assert stored.attempt_count == 1
+    assert stored.next_attempt_at == NOW + timedelta(seconds=7.5)
+
+
+def run_attempts(
+    db_session: Session,
+    session_factory: sessionmaker[Session],
+    client: httpx2.Client,
+    delivery_id: uuid.UUID,
+    settings: Settings,
+    start: datetime,
+    count: int,
+) -> None:
+    now = start
+    for _ in range(count):
+        [claimed] = claim(session_factory, now)
+        process(session_factory, client, claimed, settings, now)
+        now = load(db_session, delivery_id).next_attempt_at
+
+
+def test_retried_delivery_is_delivered_again_with_continued_attempt_numbers(
+    db_session: Session,
+    owner: User,
+    endpoint: Endpoint,
+    session_factory: sessionmaker[Session],
+    worker_settings: Settings,
+) -> None:
+    delivery = add_delivery(db_session, endpoint)
+    received: list[httpx2.Request] = []
+    failing_client = receiver(answer(500), received)
+    run_attempts(db_session, session_factory, failing_client, delivery.id, worker_settings, NOW, 3)
+    assert load(db_session, delivery.id).status == DeliveryStatus.DEAD
+    retry_time = NOW + timedelta(days=1)
+
+    retry_delivery(db_session, owner, delivery.id, retry_time)
+    [claimed] = claim(session_factory, retry_time)
+    process(session_factory, receiver(answer(200), received), claimed, worker_settings, retry_time)
+
+    stored = load(db_session, delivery.id)
+    assert stored.status == DeliveryStatus.SUCCEEDED
+    assert stored.attempt_count == 1
+    assert [attempt.attempt_number for attempt in attempts_of(db_session, delivery.id)] == [
+        1,
+        2,
+        3,
+        4,
+    ]
+    assert [request.headers["Hookline-Attempt"] for request in received] == ["1", "2", "3", "4"]
+
+
+def test_retried_delivery_gets_a_fresh_run_of_max_attempts(
+    db_session: Session,
+    owner: User,
+    endpoint: Endpoint,
+    session_factory: sessionmaker[Session],
+    worker_settings: Settings,
+) -> None:
+    delivery = add_delivery(db_session, endpoint)
+    client = receiver(answer(503), [])
+    run_attempts(db_session, session_factory, client, delivery.id, worker_settings, NOW, 3)
+    retry_time = NOW + timedelta(days=1)
+
+    retry_delivery(db_session, owner, delivery.id, retry_time)
+    [claimed] = claim(session_factory, retry_time)
+    process(session_factory, client, claimed, worker_settings, retry_time)
+    after_first_retry_attempt = load(db_session, delivery.id)
+    assert after_first_retry_attempt.status == DeliveryStatus.FAILED
+    assert after_first_retry_attempt.next_attempt_at == retry_time + timedelta(seconds=7.5)
+    run_attempts(
+        db_session,
+        session_factory,
+        client,
+        delivery.id,
+        worker_settings,
+        after_first_retry_attempt.next_attempt_at,
+        2,
+    )
+
+    stored = load(db_session, delivery.id)
+    assert stored.status == DeliveryStatus.DEAD
+    assert stored.attempt_count == 3
+    assert [attempt.attempt_number for attempt in attempts_of(db_session, delivery.id)] == [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+    ]
 
 
 def test_delivery_due_in_the_future_is_not_claimed(
