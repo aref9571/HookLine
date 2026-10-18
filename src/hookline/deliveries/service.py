@@ -1,0 +1,89 @@
+import logging
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+
+from sqlalchemy import Select, func, select
+from sqlalchemy.orm import Session
+
+from hookline.deliveries.models import Delivery, DeliveryAttempt, DeliveryStatus
+from hookline.endpoints.models import Endpoint
+from hookline.errors import InvalidFieldError, NotFoundError
+from hookline.events.models import Event
+from hookline.pagination import PageParams
+from hookline.users.models import User, UserRole
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DeliveryFilters:
+    status: DeliveryStatus | None = None
+    endpoint_id: uuid.UUID | None = None
+    event_id: uuid.UUID | None = None
+    created_after: datetime | None = None
+    created_before: datetime | None = None
+
+
+@dataclass
+class DeliveryDetails:
+    delivery: Delivery
+    endpoint_url: str
+    event_type: str
+    attempts: list[DeliveryAttempt]
+
+
+def visible_deliveries(user: User) -> Select[Delivery]:
+    query = select(Delivery).join(Endpoint, Endpoint.id == Delivery.endpoint_id)
+    if user.role != UserRole.ADMIN:
+        query = query.where(Endpoint.user_id == user.id)
+    return query
+
+
+def apply_filters(query: Select[Delivery], filters: DeliveryFilters) -> Select[Delivery]:
+    if filters.status is not None:
+        query = query.where(Delivery.status == filters.status)
+    if filters.endpoint_id is not None:
+        query = query.where(Delivery.endpoint_id == filters.endpoint_id)
+    if filters.event_id is not None:
+        query = query.where(Delivery.event_id == filters.event_id)
+    if filters.created_after is not None:
+        query = query.where(Delivery.created_at >= filters.created_after)
+    if filters.created_before is not None:
+        query = query.where(Delivery.created_at < filters.created_before)
+    return query
+
+
+def list_deliveries(
+    session: Session, user: User, filters: DeliveryFilters, page: PageParams
+) -> tuple[list[Delivery], int]:
+    created_after = filters.created_after
+    created_before = filters.created_before
+    if created_after is not None and created_before is not None and created_before <= created_after:
+        raise InvalidFieldError("created_before", "must be after created_after")
+    query = apply_filters(visible_deliveries(user), filters)
+    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    deliveries = session.scalars(
+        query.order_by(Delivery.created_at.desc(), Delivery.id)
+        .limit(page.limit)
+        .offset(page.offset)
+    )
+    return list(deliveries), total
+
+
+def get_delivery_details(session: Session, user: User, delivery_id: uuid.UUID) -> DeliveryDetails:
+    row = session.execute(
+        visible_deliveries(user)
+        .add_columns(Endpoint.url, Event.event_type)
+        .join(Event, Event.id == Delivery.event_id)
+        .where(Delivery.id == delivery_id)
+    ).one_or_none()
+    if row is None:
+        raise NotFoundError("Delivery not found.")
+    delivery, endpoint_url, event_type = row
+    return DeliveryDetails(
+        delivery=delivery,
+        endpoint_url=endpoint_url,
+        event_type=event_type,
+        attempts=list(delivery.attempts),
+    )
