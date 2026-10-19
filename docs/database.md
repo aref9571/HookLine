@@ -158,6 +158,20 @@ One row per HTTP request the worker made for a delivery. This is the delivery hi
 - `uq_delivery_attempts_delivery_id_attempt_number` stops the same attempt being recorded twice, and its index serves loading the attempts of one delivery in order.
 - In Python, `Delivery.attempts` loads the attempts of a delivery ordered by `attempt_number`.
 
+### rate_limit_windows
+
+One row per API key and minute, counting the event intake requests of that key in that minute. Added in migration `0003`.
+
+| Column | Type | Rules |
+|---|---|---|
+| api_key_id | uuid | primary key part, references api_keys, on delete cascade |
+| window_start | timestamptz | primary key part, the request time truncated to the minute |
+| request_count | integer | not null, at least 0 |
+
+- `pk_rate_limit_windows` on `(api_key_id, window_start)` makes the counter one row per key and minute, and is the conflict target of the upsert that counts a request.
+- `ck_rate_limit_windows_request_count_not_negative` checks `request_count >= 0`.
+- The worker deletes rows older than one hour. How the counter is used is described in [decision 0006](decisions/0006-rate-limiting.md).
+
 ## Indexes and the queries that use them
 
 | Index | Columns | Used by |
@@ -170,10 +184,11 @@ One row per HTTP request the worker made for a delivery. This is the delivery hi
 | `ix_deliveries_due` | `next_attempt_at` where `status IN ('pending', 'failed')` | The worker's query for deliveries that are due |
 | `ix_deliveries_endpoint_id_created_at` | `(endpoint_id, created_at DESC)` | `GET /api/v1/deliveries?endpoint_id=...`: the delivery history of one endpoint, newest first |
 | `uq_delivery_attempts_delivery_id_attempt_number` | `(delivery_id, attempt_number)`, unique | Loading the attempts of one delivery in order |
+| `pk_rate_limit_windows` | `(api_key_id, window_start)`, primary key | Counting a request with `INSERT ... ON CONFLICT DO UPDATE` |
 
 `ix_deliveries_due` is a partial index: it only contains deliveries the worker may still pick up. Succeeded and dead deliveries, which will be most of the table over time, are not in it, so the worker's query stays fast as history grows.
 
-Primary key indexes are not listed. No other foreign key column has its own index yet; that is enough at this project's size, and an index can be added in a later migration if a query needs it.
+Other primary key indexes are not listed. No other foreign key column has its own index yet; that is enough at this project's size, and an index can be added in a later migration if a query needs it.
 
 ## Delivery status
 
@@ -203,7 +218,7 @@ The worker's claim also picks up `in_progress` deliveries whose lease has expire
 | Deleted row | Effect |
 |---|---|
 | User | Their refresh tokens, API keys, endpoints and events are deleted, and through the events and endpoints their deliveries and attempts |
-| API key | Its events stay; their `api_key_id` becomes NULL |
+| API key | Its events stay; their `api_key_id` becomes NULL. Its rate limit windows are deleted |
 | Endpoint | Its deliveries and their attempts are deleted |
 | Event | Its deliveries and their attempts are deleted |
 | Delivery | Its attempts are deleted |
@@ -213,6 +228,7 @@ The worker's claim also picks up `in_progress` deliveries whose lease has expire
 | Revision | Content |
 |---|---|
 | `0001` | Enables the `pgcrypto` extension |
-| `0002` | Creates the tables above with their constraints and indexes |
+| `0002` | Creates the core tables (`users` to `delivery_attempts`) with their constraints and indexes |
+| `0003` | Creates `rate_limit_windows` |
 
-Each migration has a `downgrade` that removes exactly what its `upgrade` created. The tests downgrade to `0001` and to `base`, check that no application table is left, and upgrade again.
+Each migration has a `downgrade` that removes exactly what its `upgrade` created. The tests downgrade to `0002`, to `0001` and to `base`, check which tables are left, and upgrade again.

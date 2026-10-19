@@ -126,6 +126,10 @@ Other points for receivers:
 - `BodySizeLimitMiddleware` in `src/hookline/body_limit.py` rejects any request body over `HOOKLINE_MAX_BODY_BYTES` (default 256 KiB) with `413`. A declared `Content-Length` over the limit is rejected before the body is read. A body without a declared length (chunked) is counted while it is read and rejected as soon as it passes the limit, so a client cannot make the API hold an unlimited body in memory.
 - The event payload is limited separately to `HOOKLINE_MAX_PAYLOAD_BYTES` (default 64 KiB), measured as compact JSON in UTF-8, because the payload is stored and sent to every matching endpoint.
 
+## Rate limiting
+
+Each API key may send at most `HOOKLINE_RATE_LIMIT_PER_MINUTE` (default 120) event intake requests per minute; more get `429` with `Retry-After`. This stops one misbehaving producer from filling the database or keeping the worker busy for everyone else. The counter lives in PostgreSQL, so the limit holds across several API processes, and it is counted with one atomic upsert, so concurrent requests cannot pass the limit together. The fixed window allows up to twice the limit around the start of a minute; this and the other trade-offs are described in [decision 0006](decisions/0006-rate-limiting.md). Requests without a valid key are rejected with `401` before the counter runs, so this limit does not protect against floods of invalid keys.
+
 ## Clock
 
 The current time comes from the FastAPI dependency `get_now` in `src/hookline/clock.py`, which returns `datetime.now(UTC)`. Tests replace it to check expiry without waiting.

@@ -32,7 +32,7 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - `GET /health/live`, which returns `{"status": "ok"}`
 - `GET /health/ready`, which checks the database and returns `503` when it cannot be reached
 - A PostgreSQL connection through SQLAlchemy, with Alembic migrations
-- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries and delivery attempts, with its constraints and indexes (described in [docs/database.md](docs/database.md))
+- The database schema for users, refresh tokens, API keys, endpoints, events, deliveries, delivery attempts and rate limit windows, with its constraints and indexes (described in [docs/database.md](docs/database.md))
 - Login with a JWT access token and a rotating refresh token: `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh` and `POST /api/v1/auth/logout`, with reuse detection for refresh tokens
 - `GET /api/v1/users/me`, which returns the logged-in user
 - `admin` and `member` roles; admins create, list, promote, demote, deactivate and reactivate users with `POST /api/v1/users`, `GET /api/v1/users` and `PATCH /api/v1/users/{id}`
@@ -46,6 +46,8 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - HMAC-SHA256 signing of delivery bodies and a sender that signs and sends one delivery and classifies the result (success only for `2xx`, redirects not followed, timeouts and connection errors recorded as failures, the target URL checked again before sending)
 - A delivery worker, `python -m hookline.worker`, that claims due deliveries from PostgreSQL with `FOR UPDATE SKIP LOCKED` and a lease, sends them, records every attempt, retries failures with exponential backoff and jitter, and marks a delivery `dead` after `HOOKLINE_MAX_ATTEMPTS` attempts; several workers can run at once, and the worker stops cleanly on Ctrl+C or `SIGTERM` (described in [docs/architecture.md](docs/architecture.md#delivery-worker))
 - Delivery history and manual retry: `GET /api/v1/deliveries` (with `status`, `endpoint_id`, `event_id`, `created_after` and `created_before` filters), `GET /api/v1/deliveries/{id}` with every attempt, and `POST /api/v1/deliveries/{id}/retry`, which requeues a `failed` or `dead` delivery for a fresh run of attempts while keeping the old attempts as history
+- Delivery statistics: `GET /api/v1/stats` with the number of deliveries in each status, the events, successes, dead deliveries and success rate of the last 24 hours, the average attempts to success, and per-endpoint counts, with an optional `endpoint_id` filter
+- Per-API-key rate limiting on `POST /api/v1/events` (`HOOKLINE_RATE_LIMIT_PER_MINUTE` per minute, `429` with `Retry-After` above it, and `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers), stored in PostgreSQL with a fixed one-minute window
 - A command to create the first admin user: `python -m hookline.cli create-admin --email ...`
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
 - A Docker Compose file that starts PostgreSQL 17 for local development
@@ -99,6 +101,7 @@ Hookline reads its configuration from environment variables. The application doe
 | `HOOKLINE_WORKER_BATCH_SIZE` | no | `10` | Deliveries a worker claims at once |
 | `HOOKLINE_WORKER_POLL_SECONDS` | no | `2` | Seconds a worker waits when nothing is due |
 | `HOOKLINE_WORKER_LEASE_SECONDS` | no | `60` | How long a claimed delivery stays reserved for one worker |
+| `HOOKLINE_RATE_LIMIT_PER_MINUTE` | no | `120` | Event intake requests allowed per API key and minute; more get `429` |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 

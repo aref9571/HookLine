@@ -87,6 +87,7 @@ List routes accept `limit` (1 to 100, default 20) and `offset` (0 or more, defau
 | GET | `/api/v1/deliveries` | JWT | 200 |
 | GET | `/api/v1/deliveries/{id}` | JWT | 200 |
 | POST | `/api/v1/deliveries/{id}/retry` | JWT | 200 |
+| GET | `/api/v1/stats` | JWT | 200 |
 
 ### Health
 
@@ -373,6 +374,30 @@ Response `201`:
 
 Sending the same `Idempotency-Key` again with the same body returns `200`, the same body as the first response (with the current number of deliveries) and the header `Idempotent-Replayed: true`; no new event or delivery is created. Sending the same key with a different body returns `409`. Idempotency keys are per user: two users may use the same key. The order of keys in the JSON body does not matter. How this works is described in [decision 0003](decisions/0003-event-intake-and-idempotency.md).
 
+#### Rate limiting
+
+Each API key may send at most `HOOKLINE_RATE_LIMIT_PER_MINUTE` (default 120) requests to `POST /api/v1/events` per minute. The minutes are fixed windows that start at second 0 of each clock minute (UTC). Every request with a valid key is counted, including requests that are rejected later (for example with `413`, `409` or `429`) and idempotent replays. Requests without a valid key get `401` and are not counted.
+
+Successful responses (`201` and `200`) carry two headers:
+
+| Header | Meaning |
+|---|---|
+| `X-RateLimit-Limit` | The number of requests allowed per minute |
+| `X-RateLimit-Remaining` | The number of requests left in the current minute |
+
+A request over the limit is not processed and returns `429` with `Retry-After` (the seconds until the next minute starts, from 1 to 60) and the two headers above, with `X-RateLimit-Remaining: 0`:
+
+```json
+{
+  "type": "about:blank",
+  "title": "Too Many Requests",
+  "status": 429,
+  "detail": "The rate limit for this API key was exceeded. Try again later."
+}
+```
+
+Other error responses from this route do not carry the rate limit headers. Why a fixed window was chosen, and its weak spot at window edges, is described in [decision 0006](decisions/0006-rate-limiting.md).
+
 ### GET /api/v1/events
 
 Any logged-in user. Paginated list, newest first. Members see their own events, admins see all events. The payload is not included in the list.
@@ -541,4 +566,50 @@ The change is made with one `UPDATE ... WHERE status IN ('dead', 'failed')`. Whe
 #### Attempt numbers after a retry
 
 Old attempts stay in the history; a retry never deletes or renumbers them. New attempts continue the numbering: the next `attempt_number` is always the highest existing number for that delivery plus one, never `attempt_count + 1`. For example, a delivery that became `dead` after attempts 1, 2 and 3 and is then retried gets attempt 4 next, with `attempt_count` 1. The `Hookline-Attempt` header sent to the receiver carries the same number. `attempt_count` alone decides when the delivery becomes `dead` again, and the retry delay starts again from `HOOKLINE_BACKOFF_BASE_SECONDS`.
+
+### GET /api/v1/stats
+
+Any logged-in user. Delivery statistics, computed in the database with `GROUP BY` and aggregate queries. Members get the numbers of their own endpoints and events, admins the numbers of all users.
+
+Optional query parameter `endpoint_id` limits every number to one endpoint. For `events_received` this means events that have a delivery to that endpoint. A member who passes the ID of another user's endpoint, or an unknown ID, gets the empty result (zeros, `null` and no endpoints), the same as a list filter that matches nothing. An ID that is not a UUID returns `400`.
+
+Response `200`:
+
+```json
+{
+  "deliveries_by_status": {
+    "pending": 1,
+    "in_progress": 0,
+    "succeeded": 40,
+    "failed": 2,
+    "dead": 3
+  },
+  "last_24_hours": {
+    "events_received": 25,
+    "deliveries_succeeded": 18,
+    "deliveries_dead": 2,
+    "success_rate": 0.9
+  },
+  "average_attempts_to_success": 1.33,
+  "endpoints": [
+    {
+      "id": "3f6b1c2d-7e8f-4a9b-8c1d-2e3f4a5b6c7d",
+      "url": "https://hooks.example.com/webhook",
+      "succeeded": 18,
+      "dead": 2
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `deliveries_by_status` | The number of deliveries in each of the five statuses, all time. A status without deliveries is `0`. |
+| `last_24_hours.events_received` | Events created in the last 24 hours. |
+| `last_24_hours.deliveries_succeeded`, `deliveries_dead` | Deliveries that are `succeeded` or `dead` and whose `updated_at` is in the last 24 hours, which is when they reached that status. |
+| `last_24_hours.success_rate` | `deliveries_succeeded / (deliveries_succeeded + deliveries_dead)`, rounded to 4 decimals, or `null` when no delivery finished in the last 24 hours. |
+| `average_attempts_to_success` | The average `attempt_count` of the deliveries that succeeded in the last 24 hours, rounded to 2 decimals, or `null` when there are none. After a manual retry `attempt_count` counts only the attempts since the retry. |
+| `endpoints` | For each endpoint, the `succeeded` and `dead` counts of the last 24 hours, including endpoints with no deliveries. At most 50 endpoints, ordered by `dead` from high to low, then by `id`. |
+
+"The last 24 hours" means from 24 hours before the request up to the request.
 

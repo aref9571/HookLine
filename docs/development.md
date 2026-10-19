@@ -50,6 +50,7 @@ set +a
 | `HOOKLINE_WORKER_BATCH_SIZE` | no | `10` | Deliveries a worker claims at once |
 | `HOOKLINE_WORKER_POLL_SECONDS` | no | `2` | Seconds a worker waits when nothing is due |
 | `HOOKLINE_WORKER_LEASE_SECONDS` | no | `60` | How long a claimed delivery stays reserved for one worker |
+| `HOOKLINE_RATE_LIMIT_PER_MINUTE` | no | `120` | Event intake requests allowed per API key and minute; more get `429` |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | for Compose | none | Credentials of the local PostgreSQL container |

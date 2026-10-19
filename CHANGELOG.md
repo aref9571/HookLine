@@ -63,6 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Delivery history: `GET /api/v1/deliveries` with `status`, `endpoint_id`, `event_id`, `created_after` and `created_before` filters (members see the deliveries of their own endpoints, admins all), and `GET /api/v1/deliveries/{id}` with the endpoint URL, the event type and every attempt in order.
 - Manual retry: `POST /api/v1/deliveries/{id}/retry` requeues a `failed` or `dead` delivery for a fresh run of attempts and keeps its old attempts; other statuses and deactivated endpoints get `409`, and of two simultaneous retries only one succeeds.
 - API documentation for events and deliveries, including how attempt numbers continue after a retry.
+- Delivery statistics: `GET /api/v1/stats` with deliveries per status, events received, succeeded and dead deliveries, success rate and average attempts to success over the last 24 hours, and the succeeded and dead counts of up to 50 endpoints; members see their own data, admins all, with an optional `endpoint_id` filter.
+- Setting `HOOKLINE_RATE_LIMIT_PER_MINUTE` (default 120).
+- Migration `0003` creating the `rate_limit_windows` table.
+- Per-API-key rate limiting on `POST /api/v1/events` with a fixed one-minute window counted by one atomic upsert: `429` with `Retry-After` over the limit, and `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers on successful responses.
+- The worker deletes rate limit windows older than one hour, at most once a minute.
+- Decision record 0006 for rate limiting.
 
 ### Changed
 
