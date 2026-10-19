@@ -10,6 +10,7 @@ from hookline.endpoints.router import router as endpoints_router
 from hookline.errors import register_error_handlers
 from hookline.events.router import router as events_router
 from hookline.health.router import router as health_router
+from hookline.stats.router import router as stats_router
 from hookline.users.router import router as users_router
 
 
@@ -32,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(endpoints_router)
     app.include_router(events_router)
     app.include_router(deliveries_router)
+    app.include_router(stats_router)
     return app
 
 
