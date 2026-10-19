@@ -9,7 +9,7 @@ Producer applications send events with an API key. A broken or misbehaving produ
 ## Decision
 
 - A table `rate_limit_windows` with the primary key `(api_key_id, window_start)` and a `request_count`, added in migration `0003`. `window_start` is the request time truncated to the minute.
-- Every intake request with a valid key runs one statement:
+- Every intake request with a valid key and a well-formed body runs one statement:
 
   ```sql
   INSERT INTO rate_limit_windows (api_key_id, window_start, request_count)

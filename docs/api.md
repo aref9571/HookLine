@@ -376,7 +376,7 @@ Sending the same `Idempotency-Key` again with the same body returns `200`, the s
 
 #### Rate limiting
 
-Each API key may send at most `HOOKLINE_RATE_LIMIT_PER_MINUTE` (default 120) requests to `POST /api/v1/events` per minute. The minutes are fixed windows that start at second 0 of each clock minute (UTC). Every request with a valid key is counted, including requests that are rejected later (for example with `413`, `409` or `429`) and idempotent replays. Requests without a valid key get `401` and are not counted.
+Each API key may send at most `HOOKLINE_RATE_LIMIT_PER_MINUTE` (default 120) requests to `POST /api/v1/events` per minute. The minutes are fixed windows that start at second 0 of each clock minute (UTC). Every request with a valid key and a well-formed body is counted, including requests that are rejected later (for example with `413`, `409` or `429`) and idempotent replays. Requests without a valid key (`401`) or with a body that fails validation (`400`) are not counted.
 
 Successful responses (`201` and `200`) carry two headers:
 
