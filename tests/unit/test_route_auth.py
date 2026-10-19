@@ -23,6 +23,7 @@ JWT_ROUTES = [
     ("GET", "/api/v1/deliveries"),
     ("GET", "/api/v1/deliveries/" + ANY_ID),
     ("POST", "/api/v1/deliveries/" + ANY_ID + "/retry"),
+    ("GET", "/api/v1/stats"),
 ]
 
 
@@ -77,3 +78,9 @@ def test_openapi_schema_lists_delivery_routes(client_without_database: TestClien
     assert set(paths["/api/v1/deliveries"]) == {"get"}
     assert set(paths["/api/v1/deliveries/{delivery_id}"]) == {"get"}
     assert set(paths["/api/v1/deliveries/{delivery_id}/retry"]) == {"post"}
+
+
+def test_openapi_schema_lists_the_stats_route(client_without_database: TestClient) -> None:
+    paths = client_without_database.get("/openapi.json").json()["paths"]
+
+    assert set(paths["/api/v1/stats"]) == {"get"}

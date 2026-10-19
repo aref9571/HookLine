@@ -7,7 +7,7 @@ from tests.conftest import alembic_config
 
 pytestmark = pytest.mark.integration
 
-CORE_TABLES = {
+APPLICATION_TABLES = {
     "users",
     "refresh_tokens",
     "api_keys",
@@ -15,6 +15,7 @@ CORE_TABLES = {
     "events",
     "deliveries",
     "delivery_attempts",
+    "rate_limit_windows",
 }
 
 
@@ -37,8 +38,8 @@ def application_tables(engine: Engine) -> set[str]:
     return set(inspect(engine).get_table_names()) - {"alembic_version"}
 
 
-def test_models_define_the_core_tables() -> None:
-    assert set(Base.metadata.tables) == CORE_TABLES
+def test_models_define_all_tables() -> None:
+    assert set(Base.metadata.tables) == APPLICATION_TABLES
 
 
 def test_migrations_downgrade_to_base_and_upgrade_again(db_engine: Engine) -> None:
@@ -50,9 +51,9 @@ def test_migrations_downgrade_to_base_and_upgrade_again(db_engine: Engine) -> No
 
     command.upgrade(alembic_config(), "head")
 
-    assert current_revision(db_engine) == "0002"
+    assert current_revision(db_engine) == "0003"
     assert pgcrypto_is_installed(db_engine)
-    assert application_tables(db_engine) == CORE_TABLES
+    assert application_tables(db_engine) == APPLICATION_TABLES
 
 
 def test_core_tables_migration_downgrade_drops_everything_it_created(db_engine: Engine) -> None:
@@ -64,7 +65,19 @@ def test_core_tables_migration_downgrade_drops_everything_it_created(db_engine: 
 
     command.upgrade(alembic_config(), "head")
 
+    assert current_revision(db_engine) == "0003"
+
+
+def test_rate_limit_migration_downgrade_drops_only_its_table(db_engine: Engine) -> None:
+    command.downgrade(alembic_config(), "0002")
+
     assert current_revision(db_engine) == "0002"
+    assert application_tables(db_engine) == APPLICATION_TABLES - {"rate_limit_windows"}
+
+    command.upgrade(alembic_config(), "head")
+
+    assert current_revision(db_engine) == "0003"
+    assert application_tables(db_engine) == APPLICATION_TABLES
 
 
 def test_migrations_match_the_models(db_engine: Engine) -> None:

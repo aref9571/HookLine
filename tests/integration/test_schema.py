@@ -11,6 +11,7 @@ from hookline.api_keys.models import ApiKey
 from hookline.deliveries.models import Delivery, DeliveryAttempt, DeliveryStatus
 from hookline.endpoints.models import Endpoint
 from hookline.events.models import Event
+from hookline.rate_limit.models import RateLimitWindow
 from hookline.users.models import RefreshToken, User, UserRole
 
 pytestmark = pytest.mark.integration
@@ -349,3 +350,43 @@ def test_deleting_an_api_key_keeps_its_events_without_the_key(db_session: Sessio
 
     assert event.api_key_id is None
     assert count_rows(db_session, Event) == 1
+
+
+def add_rate_limit_window(session: Session, api_key: ApiKey, request_count: int) -> None:
+    session.add(
+        RateLimitWindow(api_key_id=api_key.id, window_start=NOW, request_count=request_count)
+    )
+    session.flush()
+
+
+def test_rate_limit_windows_reject_negative_request_count(db_session: Session) -> None:
+    api_key = add_api_key(db_session, add_user(db_session))
+
+    with pytest.raises(IntegrityError) as error:
+        add_rate_limit_window(db_session, api_key, -1)
+
+    assert violated_constraint(error.value) == "ck_rate_limit_windows_request_count_not_negative"
+
+
+def test_rate_limit_windows_reject_a_second_row_for_the_same_key_and_minute(
+    db_session: Session,
+) -> None:
+    api_key = add_api_key(db_session, add_user(db_session))
+    add_rate_limit_window(db_session, api_key, 1)
+    db_session.expunge_all()
+
+    with pytest.raises(IntegrityError) as error:
+        add_rate_limit_window(db_session, api_key, 2)
+
+    assert violated_constraint(error.value) == "pk_rate_limit_windows"
+
+
+def test_deleting_an_api_key_deletes_its_rate_limit_windows(db_session: Session) -> None:
+    api_key = add_api_key(db_session, add_user(db_session))
+    add_rate_limit_window(db_session, api_key, 3)
+    db_session.commit()
+
+    db_session.delete(api_key)
+    db_session.commit()
+
+    assert count_rows(db_session, RateLimitWindow) == 0

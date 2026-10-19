@@ -243,3 +243,22 @@ def test_configure_logging_keeps_http_client_request_lines_out_of_the_logs() -> 
 
     assert not logging.getLogger("httpx2").isEnabledFor(logging.INFO)
     assert logging.getLogger("httpx2").isEnabledFor(logging.WARNING)
+
+
+def test_settings_default_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("HOOKLINE_RATE_LIMIT_PER_MINUTE", raising=False)
+
+    assert Settings().rate_limit_per_minute == 120
+
+
+def test_settings_read_rate_limit_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOOKLINE_RATE_LIMIT_PER_MINUTE", "30")
+
+    assert Settings().rate_limit_per_minute == 30
+
+
+def test_settings_reject_rate_limit_below_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOOKLINE_RATE_LIMIT_PER_MINUTE", "0")
+
+    with pytest.raises(ValidationError):
+        Settings()
