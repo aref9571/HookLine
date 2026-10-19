@@ -8,6 +8,7 @@ from hookline.auth.dependencies import CurrentApiKey, CurrentUser
 from hookline.clock import Now
 from hookline.config import AppSettings
 from hookline.database import DbSession
+from hookline.errors import RateLimitExceededError
 from hookline.events import service
 from hookline.events.schemas import (
     IDEMPOTENCY_KEY_PATTERN,
@@ -18,6 +19,7 @@ from hookline.events.schemas import (
     EventRead,
 )
 from hookline.pagination import Page, PageQuery
+from hookline.rate_limit.service import check_and_count, rate_limit_headers
 
 router = APIRouter(prefix="/api/v1/events", tags=["events"])
 
@@ -36,6 +38,11 @@ def submit_event(
     now: Now,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> EventCreated:
+    rate_limit = check_and_count(db, api_key.id, now, settings.rate_limit_per_minute)
+    headers = rate_limit_headers(rate_limit)
+    if not rate_limit.allowed:
+        raise RateLimitExceededError(rate_limit.retry_after_seconds, headers)
+    response.headers.update(headers)
     submitted = service.submit_event(db, api_key, body, idempotency_key, settings, now)
     if submitted.replayed:
         response.status_code = 200

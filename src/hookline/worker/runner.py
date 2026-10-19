@@ -16,12 +16,15 @@ from hookline.deliveries.backoff import next_delay_seconds
 from hookline.deliveries.models import Delivery, DeliveryAttempt, DeliveryStatus
 from hookline.deliveries.sender import DeliveryRequest, DeliveryResult, send_delivery
 from hookline.endpoints.url_safety import Resolver
+from hookline.rate_limit.service import delete_old_windows
 from hookline.worker.claims import ClaimedDelivery, claim_due_deliveries
 
 logger = logging.getLogger(__name__)
 
 NowFunc = Callable[[], datetime]
 RandomFunc = Callable[[], float]
+
+CLEANUP_INTERVAL = timedelta(minutes=1)
 
 
 def build_request(claimed: ClaimedDelivery) -> DeliveryRequest:
@@ -151,6 +154,16 @@ def run_once(
     return len(claimed)
 
 
+def clean_up_if_due(
+    session_factory: sessionmaker[Session], now: datetime, last_cleanup_at: datetime | None
+) -> datetime | None:
+    if last_cleanup_at is not None and now - last_cleanup_at < CLEANUP_INTERVAL:
+        return last_cleanup_at
+    with session_factory() as session:
+        delete_old_windows(session, now)
+    return now
+
+
 def run_worker(
     settings: Settings,
     session_factory: sessionmaker[Session],
@@ -161,7 +174,9 @@ def run_worker(
     resolver: Resolver = socket.getaddrinfo,
 ) -> None:
     logger.info("Worker started")
+    last_cleanup_at: datetime | None = None
     while not stop_event.is_set():
+        last_cleanup_at = clean_up_if_due(session_factory, now_func(), last_cleanup_at)
         claimed_count = run_once(
             session_factory, client, settings, stop_event, now_func, random_func, resolver
         )

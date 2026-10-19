@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     worker_batch_size: int = Field(default=10, ge=1)
     worker_poll_seconds: int = Field(default=2, ge=1)
     worker_lease_seconds: int = Field(default=60, ge=1)
+    rate_limit_per_minute: int = Field(default=120, ge=1)
 
 
 @lru_cache

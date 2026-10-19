@@ -64,6 +64,15 @@ class ContentTooLargeError(AppError):
     title = HTTPStatus.REQUEST_ENTITY_TOO_LARGE.phrase
 
 
+class RateLimitExceededError(AppError):
+    status = 429
+    title = HTTPStatus.TOO_MANY_REQUESTS.phrase
+
+    def __init__(self, retry_after_seconds: int, headers: dict[str, str]) -> None:
+        super().__init__("The rate limit for this API key was exceeded. Try again later.")
+        self.headers = {**headers, "Retry-After": str(retry_after_seconds)}
+
+
 def problem_response(
     status: int,
     title: str,
