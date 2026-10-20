@@ -1,3 +1,10 @@
+x-hookline: &hookline
+  build: .
+  image: hookline:local
+  env_file: .env
+  environment:
+    HOOKLINE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
 services:
   postgres:
     image: postgres:17
@@ -14,6 +21,43 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  migrate:
+    <<: *hookline
+    command: ["alembic", "upgrade", "head"]
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *hookline
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *hookline
+    command: ["python", "-m", "hookline.worker"]
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  receiver:
+    image: python:3.12-slim
+    command: ["python", "-u", "/app/demo_receiver.py"]
+    init: true
+    environment:
+      RECEIVER_SECRET: ${RECEIVER_SECRET:-}
+    volumes:
+      - ./scripts/demo_receiver.py:/app/demo_receiver.py:ro
 
 volumes:
   postgres-data:
