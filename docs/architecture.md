@@ -53,11 +53,13 @@ The code lives in `src/hookline/`. Each feature has its own folder.
 
 Database migrations live in `migrations/` and are run with Alembic. The schema is described in [database.md](database.md).
 
+`scripts/` holds two files that are not part of the package: `smoke_test.sh`, the end-to-end test of the Compose stack, and `demo_receiver.py`, a standard-library HTTP server that checks signatures and is used as the subscriber in the local demo.
+
 Feature folders follow the same shape as they are added: SQLAlchemy models, Pydantic schemas, a service module with plain functions that take a database connection object, and a FastAPI router. Routers translate HTTP requests into service calls and contain no queries. There is no separate repository layer.
 
 ## Current state
 
-The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management, API key management, endpoint management, event intake, reading events, the delivery history, manual retry and delivery statistics exist; they are listed in [api.md](api.md), and how passwords, tokens, roles, API keys, endpoint secrets and endpoint URLs are handled is described in [security.md](security.md). Event intake stores each event and its pending deliveries in one transaction, as described in [decision 0003](decisions/0003-event-intake-and-idempotency.md). The sender in `deliveries/sender.py` signs and sends a single delivery and returns the result without touching the database; signing is described in [decision 0004](decisions/0004-payload-signing.md). The delivery worker described below sends pending deliveries and retries failed ones. `GET /api/v1/stats` (`stats/service.py`) counts deliveries and events with `GROUP BY` and aggregate queries, and event intake is rate limited per API key with a fixed one-minute window stored in `rate_limit_windows`, as described in [decision 0006](decisions/0006-rate-limiting.md). Every request passes through three small ASGI middlewares: request logging (outermost, so it also sees requests that the inner middlewares reject), the security headers and the body size limit.
+The application factory, configuration, the database connection, Alembic migrations, problem details error handling and the health endpoints `GET /health/live` and `GET /health/ready` exist so far, together with the database schema and its SQLAlchemy models. Under `/api/v1`, login, refresh, logout, `GET /api/v1/users/me`, admin user management, API key management, endpoint management, event intake, reading events, the delivery history, manual retry and delivery statistics exist; they are listed in [api.md](api.md), and how passwords, tokens, roles, API keys, endpoint secrets and endpoint URLs are handled is described in [security.md](security.md). Event intake stores each event and its pending deliveries in one transaction, as described in [decision 0003](decisions/0003-event-intake-and-idempotency.md). The sender in `deliveries/sender.py` signs and sends a single delivery and returns the result without touching the database; signing is described in [decision 0004](decisions/0004-payload-signing.md). The delivery worker described below sends pending deliveries and retries failed ones. `GET /api/v1/stats` (`stats/service.py`) counts deliveries and events with `GROUP BY` and aggregate queries, and event intake is rate limited per API key with a fixed one-minute window stored in `rate_limit_windows`, as described in [decision 0006](decisions/0006-rate-limiting.md). Every request passes through three small ASGI middlewares: request logging (outermost, so it also sees requests that the inner middlewares reject), the security headers and the body size limit. The whole system runs with Docker Compose, as described below.
 
 ## Delivery worker
 
@@ -76,6 +78,25 @@ The retry delay comes from `next_delay_seconds` in `deliveries/backoff.py`: `min
 A user can requeue a `failed` or `dead` delivery with `POST /api/v1/deliveries/{id}/retry` (`deliveries/service.py`). It resets the delivery to `pending` with `attempt_count = 0`, so the worker gives it a fresh run of up to `HOOKLINE_MAX_ATTEMPTS` attempts with the backoff starting again from the base delay. The old attempt rows stay, and the attempt number keeps counting up from the highest recorded one, so the history is never overwritten and the unique `(delivery_id, attempt_number)` constraint is never hit. `attempt_count` decides when the delivery is `dead`; the attempt number only names the attempt.
 
 Each attempt is logged in one line with the delivery ID, the attempt number, the outcome, the status code and the duration. Payloads, secrets and URLs are not logged. Why the queue is in PostgreSQL, how leases work and why delivery is at least once is explained in [decision 0005](decisions/0005-postgres-job-queue.md).
+
+## Running in containers
+
+One Docker image, built from the `Dockerfile` on `python:3.12-slim`, holds the installed package (runtime dependencies only, installed with `pip install --no-cache-dir .`), `alembic.ini` and `migrations/`. It runs as the non-root user `hookline` (UID 10001). Its default command starts the API with uvicorn on port 8000, and its health check calls `/health/live` with Python's `urllib`, because the slim image has no `curl`. No setting or secret is built into the image; everything comes from environment variables when a container starts.
+
+`docker-compose.yml` uses this image three times, which mirrors the two-process design:
+
+```
+postgres (healthy) --> migrate: alembic upgrade head (exits 0) --> api: uvicorn, 127.0.0.1:8000
+                                                               --> worker: python -m hookline.worker --> receiver:9000/hook
+```
+
+- `migrate` runs the migrations once. `api` and `worker` only start after it has finished successfully, so neither ever runs against an old schema.
+- `api` and `worker` have the restart policy `unless-stopped`, so a crash, for example after a longer database outage, is followed by a restart.
+- The health check is turned off for `migrate` and `worker`, because they do not serve HTTP.
+- `receiver` is the demo subscriber from `scripts/demo_receiver.py`, run on the plain `python:3.12-slim` image with the script mounted read-only. It is only reachable inside the Compose network.
+- PostgreSQL and the API are published on `127.0.0.1` only, so they are not reachable from other machines.
+
+The development guide describes how to start the stack and try a delivery ([development.md](development.md#running-everything-with-docker-compose)).
 
 ## Errors
 

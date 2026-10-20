@@ -1,11 +1,11 @@
 # Development
 
-This guide explains how to run Hookline and its tests on a development machine.
+This guide explains how to run Hookline and its tests on a development machine. The quickest way to run the whole system is Docker Compose; running the API and the worker directly with Python is described after that.
 
 ## Requirements
 
 - Python 3.12 or newer
-- Docker with Docker Compose v2, for the local PostgreSQL and for the integration tests
+- Docker with Docker Compose v2, for the Compose stack, the local PostgreSQL and the integration tests
 
 ## Setup
 
@@ -17,13 +17,15 @@ pip install -e ".[dev]"
 
 ## Configuration and `.env`
 
-Hookline reads its configuration from environment variables that start with `HOOKLINE_`. The application does not read `.env` files itself. The `.env` file is used by Docker Compose for the database credentials and can be loaded into your shell for the application.
+Hookline reads its configuration from environment variables that start with `HOOKLINE_`. The application does not read `.env` files itself. Docker Compose reads `.env` for the database credentials and passes the `HOOKLINE_` variables to the Hookline containers; for the Python path below it can be loaded into your shell.
 
 ```bash
 cp .env.example .env
 ```
 
-Change `POSTGRES_PASSWORD` in `.env` and use the same password in `HOOKLINE_DATABASE_URL`. `.env` is listed in `.gitignore` and must never be committed.
+Set `HOOKLINE_JWT_SECRET` in `.env` to a random value of at least 32 characters (see below). Change `POSTGRES_PASSWORD` and use the same password in `HOOKLINE_DATABASE_URL`. `.env` is listed in `.gitignore` and must never be committed.
+
+`.env.example` is made for the local demo: it sets `HOOKLINE_ALLOW_PRIVATE_TARGETS=true` and `HOOKLINE_REQUIRE_HTTPS_TARGETS=false`, so that Hookline may deliver to the demo receiver at `http://receiver:9000/hook`, which is a plain `http` address on the private Docker network. A real deployment must keep the defaults (`false` and `true`), otherwise users could make Hookline send requests to internal services (see [security.md](security.md#server-side-request-forgery-ssrf)).
 
 Load the variables into the current shell:
 
@@ -54,6 +56,7 @@ set +a
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | for Compose | none | Credentials of the local PostgreSQL container |
+| `RECEIVER_SECRET` | no | empty | Signing secret of the demo endpoint, read only by the demo receiver |
 
 The application refuses to start if `HOOKLINE_DATABASE_URL` or `HOOKLINE_JWT_SECRET` is not set, or if the JWT secret is shorter than 32 characters. Alembic and the command-line tool read the same settings, so they need both variables too. Create a JWT secret with:
 
@@ -63,7 +66,56 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 The tests set their own placeholder values and do not need these variables.
 
+## Running everything with Docker Compose
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+docker compose ps
+curl localhost:8000/health/ready
+```
+
+`docker-compose.yml` starts these services:
+
+| Service | What it does |
+|---|---|
+| `postgres` | PostgreSQL 17 with the data in the named volume `postgres-data`, published on `127.0.0.1:5432` |
+| `migrate` | Runs `alembic upgrade head` once after PostgreSQL is healthy, then exits |
+| `api` | The API (`uvicorn hookline.main:app`) on `127.0.0.1:8000`, started after `migrate` has finished successfully |
+| `worker` | The delivery worker (`python -m hookline.worker`), also started after `migrate` |
+| `receiver` | The demo receiver from `scripts/demo_receiver.py` on port 9000 inside the Compose network only |
+
+`migrate`, `api` and `worker` use the same image, built from the `Dockerfile`. They read the settings from `.env`; only `HOOKLINE_DATABASE_URL` is set by Compose, from the `POSTGRES_` values, so that it points at the `postgres` service instead of `127.0.0.1`. `api` and `worker` are restarted automatically if they stop with an error. The image runs as the non-root user `hookline` and has a health check that calls `/health/live`.
+
+Create the first admin inside the `api` container:
+
+```bash
+docker compose exec api python -m hookline.cli create-admin --email admin@example.com
+```
+
+### Trying a delivery with the demo receiver
+
+The demo receiver is a small standard-library HTTP server. It accepts `POST /hook`, checks the `Hookline-Signature` header with the same algorithm as the example in [security.md](security.md#verifying-signatures), answers `204` for a valid signature and `401` otherwise, and prints one line per request with the event ID. It only knows the signing secret through `RECEIVER_SECRET`, and the secret is created by Hookline when the endpoint is created, so the order is:
+
+1. Log in, create an API key and create an endpoint with the URL `http://receiver:9000/hook` (the requests are shown in the README).
+2. Put the `secret` from the endpoint response into `.env` as `RECEIVER_SECRET=...` and restart the receiver with `docker compose up -d receiver`.
+3. Send an event with the API key, then run `docker compose logs receiver`. It shows `Verified signature for event <id>` once the worker has delivered it.
+
+### Smoke test
+
+`scripts/smoke_test.sh` runs all of these steps automatically and prints `PASS` or `FAIL`. It stops the stack and **deletes its volumes**, including the Compose database, when it ends. See [testing.md](testing.md#end-to-end-smoke-test).
+
+### Stopping
+
+```bash
+docker compose down
+```
+
+Add `-v` to delete the database volume as well.
+
 ## Starting PostgreSQL
+
+To run the API and the worker directly with Python, start only the database:
 
 ```bash
 docker compose up -d --wait postgres
@@ -114,7 +166,7 @@ curl localhost:8000/health/ready
 python -m hookline.worker
 ```
 
-The worker sends pending deliveries and retries failed ones. It needs the same environment variables as the API. Stop it with Ctrl+C or `SIGTERM`; it finishes the delivery it is sending first. Several workers can run at the same time. For a local test against a receiver on your own machine, set `HOOKLINE_ALLOW_PRIVATE_TARGETS=true` and `HOOKLINE_REQUIRE_HTTPS_TARGETS=false` for both the API and the worker.
+The worker sends pending deliveries and retries failed ones. It needs the same environment variables as the API. Stop it with Ctrl+C or `SIGTERM`; it finishes the delivery it is sending first. Several workers can run at the same time. A local test against a receiver on your own machine needs `HOOKLINE_ALLOW_PRIVATE_TARGETS=true` and `HOOKLINE_REQUIRE_HTTPS_TARGETS=false` for both the API and the worker, as set in `.env.example`.
 
 ## Running the checks and tests
 
@@ -132,11 +184,13 @@ pytest -m "not integration"
 pytest -m integration
 ```
 
-CI runs the same checks and fails when total test coverage is below 85% (`pytest --cov --cov-fail-under=85`). How the tests are organised, how Testcontainers is used and how to run smaller subsets is described in [testing.md](testing.md).
+CI runs the same checks and fails when total test coverage is below 85% (`pytest --cov --cov-fail-under=85`). CI also has a second job, `docker-smoke`, which runs after these checks have passed: it runs `shellcheck scripts/*.sh`, builds the image and runs `scripts/smoke_test.sh`. How the tests are organised, how Testcontainers is used and how to run smaller subsets is described in [testing.md](testing.md).
 
 ## Troubleshooting Docker
 
 - `Cannot connect to the Docker daemon` or similar connection errors in the integration tests mean Docker is not running. Start Docker and run the tests again. The unit tests do not need Docker.
-- `port is already allocated` when starting Compose means another PostgreSQL is using port 5432. Stop it, or change the host port in `docker-compose.yml` and in `HOOKLINE_DATABASE_URL`.
+- `port is already allocated` when starting Compose means another program is using port 5432 or 8000. Stop it, or change the host port in `docker-compose.yml` (for 5432 also in `HOOKLINE_DATABASE_URL`).
+- If `api` or `worker` keeps restarting, `docker compose logs api` shows why. The most common reason is a `HOOKLINE_JWT_SECRET` shorter than 32 characters, for example the `change-me` placeholder from `.env.example`.
+- The database URL is built from `POSTGRES_USER` and `POSTGRES_PASSWORD`, so these values should only contain letters, digits, `-` and `_`; other characters would need URL encoding.
 - `set POSTGRES_PASSWORD in .env` means the `.env` file is missing or incomplete. Copy `.env.example` to `.env`.
 - If the first test run is slow, Docker is downloading the `postgres:17` image. Later runs reuse it.

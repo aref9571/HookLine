@@ -52,8 +52,9 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
 - One log line per request with the method, path, status and duration, and no query strings, headers or bodies
 - `X-Content-Type-Options: nosniff` on every response and `Cache-Control: no-store` on the login, refresh and logout responses
-- A Docker Compose file that starts PostgreSQL 17 for local development
-- Unit tests, integration tests against a real PostgreSQL started by Testcontainers (including tests for every check constraint, unique constraint and delete rule of the schema), and a CI workflow for formatting, linting, type checking and tests with a minimum coverage of 85%
+- A Docker image (non-root, with a health check) and a Docker Compose stack with PostgreSQL 17, a migration step, the API, the worker and a demo receiver that verifies signatures
+- An end-to-end smoke test, `scripts/smoke_test.sh`, that starts the stack, sends an event and checks that it was delivered with a valid signature
+- Unit tests, integration tests against a real PostgreSQL started by Testcontainers (including tests for every check constraint, unique constraint and delete rule of the schema), and a CI workflow for formatting, linting, type checking and tests with a minimum coverage of 85%, followed by a job that builds the image and runs the smoke test
 
 ## Tech stack
 
@@ -65,12 +66,68 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - PostgreSQL 17, SQLAlchemy 2 with psycopg 3, Alembic
 - pytest, pytest-cov, httpx2 `MockTransport` and Testcontainers for tests
 - ruff and mypy for code quality
-- Docker Compose for the local database
+- Docker and Docker Compose
 - GitHub Actions for CI
 
 ## Getting started
 
-Requirements: Python 3.12 or newer, and Docker with Docker Compose v2.
+### With Docker
+
+Requirements: Docker with Docker Compose v2.
+
+```bash
+cp .env.example .env
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Put the printed value into `.env` as `HOOKLINE_JWT_SECRET`. The application does not start with a secret shorter than 32 characters, so the `change-me` placeholder must be replaced. Then build and start the stack, and create the first admin:
+
+```bash
+docker compose up -d --build
+curl localhost:8000/health/ready
+docker compose exec api python -m hookline.cli create-admin --email admin@example.com
+```
+
+This starts PostgreSQL, runs the migrations once, and starts the API on http://localhost:8000 and the delivery worker. It also starts a small demo receiver at `http://receiver:9000/hook` inside the Compose network, which checks the signature of every delivery and prints the event ID. `create-admin` asks for the password, or reads it from `HOOKLINE_ADMIN_PASSWORD`.
+
+Log in, create an API key and an endpoint for the demo receiver:
+
+```bash
+curl -X POST localhost:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email": "admin@example.com", "password": "your-password"}'
+curl localhost:8000/api/v1/users/me -H 'Authorization: Bearer <access_token>'
+curl -X POST localhost:8000/api/v1/api-keys \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "local test"}'
+curl -X POST localhost:8000/api/v1/endpoints \
+  -H 'Authorization: Bearer <access_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "http://receiver:9000/hook", "event_types": ["order.created"]}'
+```
+
+Put the `secret` from the endpoint response into `.env` as `RECEIVER_SECRET`, restart the receiver so it can check signatures, send an event and look at the receiver's log:
+
+```bash
+docker compose up -d receiver
+curl -X POST localhost:8000/api/v1/events \
+  -H 'X-API-Key: <api key>' \
+  -H 'Idempotency-Key: order-42' \
+  -H 'Content-Type: application/json' \
+  -d '{"event_type": "order.created", "payload": {"order_id": 42}}'
+docker compose logs receiver
+```
+
+The log shows `Verified signature for event <id>`, and `GET /api/v1/deliveries` shows the delivery as `succeeded`. Stop the stack with `docker compose down` (add `-v` to delete the database).
+
+`scripts/smoke_test.sh` runs these steps automatically and prints `PASS` or `FAIL`. It removes the stack and its volumes, including the database, when it ends.
+
+`.env.example` sets `HOOKLINE_ALLOW_PRIVATE_TARGETS=true` and `HOOKLINE_REQUIRE_HTTPS_TARGETS=false` only for this local demo, because the demo receiver is a plain `http` address on the private Docker network. A production deployment must keep the defaults, `false` and `true`: otherwise any user who can create an endpoint could make Hookline send requests to internal services such as the database or a cloud metadata address. See [docs/security.md](docs/security.md#server-side-request-forgery-ssrf).
+
+### With Python
+
+Requirements: Python 3.12 or newer, and Docker with Docker Compose v2 for the database.
 
 ```bash
 python -m venv .venv
@@ -82,9 +139,7 @@ set -a
 set +a
 ```
 
-Replace `change-me` for `HOOKLINE_JWT_SECRET` in `.env` with a random value, for example the output of `python -c "import secrets; print(secrets.token_urlsafe(32))"`. The application does not start with a secret shorter than 32 characters.
-
-Hookline reads its configuration from environment variables. The application does not read `.env` itself, so the commands above load it into the shell. Docker Compose reads `.env` on its own.
+Replace `change-me` for `HOOKLINE_JWT_SECRET` in `.env` with a random value as shown above before loading it. The application does not read `.env` itself, so the commands above load it into the shell. Docker Compose reads `.env` on its own.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
@@ -106,6 +161,8 @@ Hookline reads its configuration from environment variables. The application doe
 | `HOOKLINE_RATE_LIMIT_PER_MINUTE` | no | `120` | Event intake requests allowed per API key and minute; more get `429` |
 | `HOOKLINE_APP_NAME` | no | `Hookline` | Title shown in the API docs |
 | `HOOKLINE_LOG_LEVEL` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | for Compose | none | Credentials of the PostgreSQL container |
+| `RECEIVER_SECRET` | no | empty | Signing secret the demo receiver checks deliveries with |
 
 Start PostgreSQL, run the migrations, create the first admin and start the API:
 
@@ -123,23 +180,7 @@ In a second shell with the same environment variables, start the worker that sen
 python -m hookline.worker
 ```
 
-`create-admin` asks for the password, or reads it from `HOOKLINE_ADMIN_PASSWORD`. Then log in and call an authenticated route:
-
-```bash
-curl -X POST localhost:8000/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email": "admin@example.com", "password": "your-password"}'
-curl localhost:8000/api/v1/users/me -H 'Authorization: Bearer <access_token>'
-curl -X POST localhost:8000/api/v1/api-keys \
-  -H 'Authorization: Bearer <access_token>' \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "local test"}'
-curl -X POST localhost:8000/api/v1/events \
-  -H 'X-API-Key: <api key>' \
-  -H 'Idempotency-Key: order-42' \
-  -H 'Content-Type: application/json' \
-  -d '{"event_type": "order.created", "payload": {"order_id": 42}}'
-```
+The requests from the Docker section work the same way against this API. An endpoint must point at a receiver that the worker can reach, for example `http://127.0.0.1:9000/hook` with `RECEIVER_SECRET=<secret> python scripts/demo_receiver.py` running in a third shell.
 
 All routes are described in [docs/api.md](docs/api.md).
 
@@ -182,7 +223,14 @@ mypy src
 pytest --cov --cov-report=term-missing
 ```
 
-The integration tests start their own PostgreSQL container, so Docker must be running. CI fails when test coverage drops below 85%. See [docs/development.md](docs/development.md) for details and troubleshooting, and [docs/testing.md](docs/testing.md) for how the tests are organised.
+The integration tests start their own PostgreSQL container, so Docker must be running. CI fails when test coverage drops below 85%. The end-to-end test of the Docker stack is run with:
+
+```bash
+scripts/smoke_test.sh
+shellcheck scripts/*.sh
+```
+
+CI runs both in a second job after the other checks have passed. See [docs/development.md](docs/development.md) for details and troubleshooting, and [docs/testing.md](docs/testing.md) for how the tests are organised.
 
 ## Documentation
 

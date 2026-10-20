@@ -12,7 +12,7 @@ tests/
 └── integration/     tests against a real PostgreSQL, marked with "integration"
 ```
 
-- **Unit tests** (`tests/unit/`) test one module or one route without a database: settings, password hashing, tokens, URL safety, signing, the sender, backoff, the body size limit, the security headers, request logging, error handling, pagination and the worker's behaviour when the database is down. Routes that fail before they reach the database (for example `401` without a token or `400` for an invalid body) are tested here with the `client_without_database` fixture.
+- **Unit tests** (`tests/unit/`) test one module or one route without a database: settings, password hashing, tokens, URL safety, signing, the demo receiver's signature check, the sender, backoff, the body size limit, the security headers, request logging, error handling, pagination and the worker's behaviour when the database is down. Routes that fail before they reach the database (for example `401` without a token or `400` for an invalid body) are tested here with the `client_without_database` fixture.
 - **Integration tests** (`tests/integration/`) go through the real API, the real services and a real PostgreSQL 17: the schema constraints, migrations, authentication, user management, API keys, endpoints, event intake, the worker, delivery history, retry, statistics and rate limiting.
 
 Test files are named after the feature they test, and test functions describe the behaviour they check, for example `test_revoking_another_users_key_returns_404`. They are plain `pytest` functions with the arrange, act and assert steps separated by blank lines.
@@ -49,14 +49,14 @@ The container is started once and reused by every integration test, because star
 
 ## Running a subset
 
-```bash
-pytest -m "not integration"                    # only the unit tests, no Docker needed
-pytest -m integration                          # only the integration tests
-pytest tests/integration/test_worker.py        # one file
-pytest -k retry                                # tests whose name contains "retry"
-pytest tests/unit/test_signing.py::test_verify_accepts_a_correct_header
-pytest -W error                                # turn every warning into a failure
-```
+| Command | What it runs |
+|---|---|
+| `pytest -m "not integration"` | Only the unit tests; no Docker needed |
+| `pytest -m integration` | Only the integration tests |
+| `pytest tests/integration/test_worker.py` | One file |
+| `pytest -k retry` | Tests whose name contains "retry" |
+| `pytest tests/unit/test_signing.py::test_verify_accepts_a_correct_header` | One test |
+| `pytest -W error` | All tests, with every warning turned into a failure |
 
 ## Coverage
 
@@ -67,3 +67,24 @@ pytest --cov --cov-report=term-missing
 ```
 
 The report lists the lines and branches that no test reached. CI runs the tests with `--cov-fail-under=85`, so a change that lowers total coverage below 85% fails the build. Coverage only shows which code ran, not whether a test checked the result, so every test also asserts the behaviour it is about. CI runs the integration tests too, because GitHub's `ubuntu-latest` runners have Docker.
+
+## End-to-end smoke test
+
+`scripts/smoke_test.sh` tests the whole system as it runs in Docker Compose: the image, the migrations, the API, the worker, PostgreSQL and a real HTTP delivery to the demo receiver. It needs a `.env` file with a valid `HOOKLINE_JWT_SECRET` (see [development.md](development.md#running-everything-with-docker-compose)).
+
+```bash
+scripts/smoke_test.sh
+```
+
+The script:
+
+1. starts the stack with `docker compose up -d --build` and waits for `/health/ready`;
+2. checks that the `api` container does not run as root;
+3. creates an admin with `python -m hookline.cli create-admin` inside the `api` container, logs in and creates an API key;
+4. creates an endpoint for `http://receiver:9000/hook` and restarts the demo receiver with that endpoint's signing secret;
+5. sends an event and asks `GET /api/v1/deliveries` every two seconds until the delivery is `succeeded`, for at most 60 seconds;
+6. checks that the receiver's log shows a verified signature for that event.
+
+It always ends with a `PASS` or `FAIL` line. On failure it first prints the last log lines of every service. On exit, whether it passed or not, it runs `docker compose down --volumes`, which also deletes the data of the Compose database. CI runs it in the `docker-smoke` job after the other checks have passed, together with `shellcheck scripts/*.sh`.
+
+The demo receiver's signature check is also covered by unit tests in `tests/unit/test_demo_receiver.py`, which sign a body with Hookline's own signing code and check that the receiver accepts it and rejects a wrong secret, a changed body, an old timestamp and a malformed header.

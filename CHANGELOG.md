@@ -73,6 +73,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `X-Content-Type-Options: nosniff` on every response and `Cache-Control: no-store` on `/api/v1/auth/*` responses.
 - CI fails when test coverage is below 85%.
 - Threat model, secret handling, response headers, dependency check and known limitations in `docs/security.md`, and a new testing guide in `docs/testing.md`.
+- `Dockerfile` based on `python:3.12-slim` that installs only the runtime dependencies, runs as a non-root user and checks `/health/live` in a health check, and a `.dockerignore`.
+- Docker Compose stack with `postgres`, a one-off `migrate` service running `alembic upgrade head`, `api`, `worker` (both restarted on failure) and a demo `receiver`.
+- Demo receiver `scripts/demo_receiver.py`: a standard-library HTTP server that verifies the `Hookline-Signature` header and prints the event ID.
+- End-to-end smoke test `scripts/smoke_test.sh`: starts the stack, creates an admin, an API key and an endpoint, sends an event and checks that the delivery succeeded and the receiver verified the signature.
+- CI job `docker-smoke` that runs `shellcheck`, builds the image and runs the smoke test after the other checks have passed.
+- Docker and Compose documentation in the README, the development, architecture, testing and security guides.
 
 ### Changed
 
@@ -82,6 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `HOOKLINE_DATABASE_URL` is held as a secret value, so the database password is not shown when the settings are printed.
 - Internal objects that carry tokens, keys, signing secrets, target URLs or payloads leave them out of their text representation.
 - Reusing an idempotency key compares the stored request hash in constant time.
+- `.env.example` is set up for the local Docker demo: `HOOKLINE_ALLOW_PRIVATE_TARGETS=true`, `HOOKLINE_REQUIRE_HTTPS_TARGETS=false` and an empty `RECEIVER_SECRET`. The application defaults are unchanged.
+- The README describes getting started with Docker first and with Python second.
 
 ### Fixed
 

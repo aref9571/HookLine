@@ -192,6 +192,13 @@ Every request is logged in one line by `RequestLoggingMiddleware` in `src/hookli
 
 When the worker cannot reach the database it logs only "Database is unavailable", not the error text, because database error messages can contain connection details.
 
+## Containers
+
+- The image runs as the non-root user `hookline`; the smoke test checks that `id -u` in the `api` container is not `0`.
+- No secret is built into the image. `.env`, `.git`, the tests, the docs and the scripts are excluded with `.dockerignore`, and every setting, including `HOOKLINE_JWT_SECRET` and the database password, is passed as an environment variable when the container starts. `docker history` and `docker inspect` of the image show no `HOOKLINE_` variable.
+- Docker Compose publishes PostgreSQL and the API on `127.0.0.1` only. The demo receiver is not published at all.
+- `.env.example` sets `HOOKLINE_ALLOW_PRIVATE_TARGETS=true` and `HOOKLINE_REQUIRE_HTTPS_TARGETS=false`, only so that the local demo can deliver to `http://receiver:9000/hook` on the private Docker network. A real deployment must keep the defaults (`false` and `true`); otherwise any user who can create an endpoint could make Hookline send requests to internal services. The `change-me` values in `.env.example` are placeholders: the API does not start with the placeholder JWT secret, and the database password must be changed for anything other than a local test.
+
 ## Known limitations
 
 - Endpoint signing secrets are stored in plain text, because they are needed to sign deliveries. Encrypting them at rest is future work.
@@ -202,3 +209,4 @@ When the worker cannot reach the database it logs only "Database is unavailable"
 - There is no limit on failed login attempts per account or per address. bcrypt makes each guess slow, but a lockout or login rate limit would be the next step.
 - A `500` response from an unexpected error does not carry the security headers (see above).
 - Delivery is at least once, so receivers must de-duplicate on `Hookline-Event-Id`.
+- The Compose setup is meant for local use and the smoke test: it has no TLS in front of the API and keeps the configuration in a `.env` file instead of a secret store.
