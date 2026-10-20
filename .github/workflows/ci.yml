@@ -37,3 +37,26 @@ jobs:
 
       - name: Run tests
         run: pytest --cov --cov-report=term-missing --cov-fail-under=85
+
+  docker-smoke:
+    needs: quality-and-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Check shell scripts
+        run: shellcheck scripts/*.sh
+
+      - name: Create the environment file
+        run: |
+          cp .env.example .env
+          jwt_secret=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+          sed -i "s/^HOOKLINE_JWT_SECRET=.*/HOOKLINE_JWT_SECRET=$jwt_secret/" .env
+
+      - name: Build the image
+        run: docker compose build
+
+      - name: Run the smoke test
+        run: scripts/smoke_test.sh
