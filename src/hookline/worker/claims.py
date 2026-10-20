@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, ScalarSelect, and_, func, or_, select, update
+from sqlalchemy import ColumnElement, Row, ScalarSelect, Select, and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from hookline.deliveries.models import Delivery, DeliveryAttempt, DeliveryStatus
@@ -76,10 +76,8 @@ def start_lease(
     )
 
 
-def claim_due_deliveries(
-    session: Session, now: datetime, batch_size: int, lease_seconds: int
-) -> list[ClaimedDelivery]:
-    rows = session.execute(
+def select_due_deliveries(now: datetime, batch_size: int) -> Select[Any]:
+    return (
         select(
             Delivery.id.label("delivery_id"),
             next_attempt_number().label("attempt_number"),
@@ -98,29 +96,37 @@ def claim_due_deliveries(
         .order_by(Delivery.next_attempt_at, Delivery.id)
         .limit(batch_size)
         .with_for_update(skip_locked=True, of=Delivery)
-    ).all()
+    )
+
+
+def to_claimed_delivery(row: Row[Any], locked_until: datetime) -> ClaimedDelivery:
+    return ClaimedDelivery(
+        delivery_id=row.delivery_id,
+        attempt_number=row.attempt_number,
+        attempt_count=row.attempt_count,
+        locked_until=locked_until,
+        url=row.url,
+        secret=row.secret,
+        event_id=row.event_id,
+        event_type=row.event_type,
+        event_created_at=row.event_created_at,
+        payload=row.payload,
+    )
+
+
+def claim_due_deliveries(
+    session: Session, now: datetime, batch_size: int, lease_seconds: int
+) -> list[ClaimedDelivery]:
+    rows = session.execute(select_due_deliveries(now, batch_size)).all()
 
     locked_until = now + timedelta(seconds=lease_seconds)
     claimed = []
     disabled_ids = []
     for row in rows:
-        if not row.is_active:
+        if row.is_active:
+            claimed.append(to_claimed_delivery(row, locked_until))
+        else:
             disabled_ids.append(row.delivery_id)
-            continue
-        claimed.append(
-            ClaimedDelivery(
-                delivery_id=row.delivery_id,
-                attempt_number=row.attempt_number,
-                attempt_count=row.attempt_count,
-                locked_until=locked_until,
-                url=row.url,
-                secret=row.secret,
-                event_id=row.event_id,
-                event_type=row.event_type,
-                event_created_at=row.event_created_at,
-                payload=row.payload,
-            )
-        )
 
     if disabled_ids:
         mark_endpoint_disabled(session, disabled_ids, now)

@@ -93,30 +93,18 @@ def failed_result(error: str, duration_ms: int) -> DeliveryResult:
     )
 
 
-def send_delivery(
-    client: httpx2.Client,
-    request: DeliveryRequest,
-    now: datetime,
-    settings: Settings,
-    resolver: Resolver = socket.getaddrinfo,
+def post_delivery(
+    client: httpx2.Client, url: str, body: bytes, headers: dict[str, str], timeout_seconds: int
 ) -> DeliveryResult:
-    try:
-        validate_target_url(request.url, settings, resolver)
-    except InvalidFieldError:
-        logger.warning("Delivery target not allowed for event %s", request.event_id)
-        return failed_result("target address not allowed", 0)
-
-    body = build_body(request)
-    headers = build_headers(request, body, now)
     started = time.monotonic()
     try:
         with client.stream(
             "POST",
-            request.url,
+            url,
             content=body,
             headers=headers,
             follow_redirects=False,
-            timeout=settings.delivery_timeout_seconds,
+            timeout=timeout_seconds,
         ) as response:
             excerpt = read_excerpt(response)
     except httpx2.TimeoutException:
@@ -134,3 +122,21 @@ def send_delivery(
         duration_ms=elapsed_ms(started),
         response_excerpt=excerpt,
     )
+
+
+def send_delivery(
+    client: httpx2.Client,
+    request: DeliveryRequest,
+    now: datetime,
+    settings: Settings,
+    resolver: Resolver = socket.getaddrinfo,
+) -> DeliveryResult:
+    try:
+        validate_target_url(request.url, settings, resolver)
+    except InvalidFieldError:
+        logger.warning("Delivery target not allowed for event %s", request.event_id)
+        return failed_result("target address not allowed", 0)
+
+    body = build_body(request)
+    headers = build_headers(request, body, now)
+    return post_delivery(client, request.url, body, headers, settings.delivery_timeout_seconds)

@@ -126,6 +126,13 @@ def submit_event(
     )
 
 
+def check_created_range(created_after: datetime | None, created_before: datetime | None) -> None:
+    if created_after is None or created_before is None:
+        return
+    if created_before <= created_after:
+        raise InvalidFieldError("created_before", "must be after created_after")
+
+
 def visible_events(user: User) -> Select[Event]:
     query = select(Event)
     if user.role != UserRole.ADMIN:
@@ -141,8 +148,7 @@ def list_events(
     created_before: datetime | None,
     page: PageParams,
 ) -> tuple[list[Event], int]:
-    if created_after is not None and created_before is not None and created_before <= created_after:
-        raise InvalidFieldError("created_before", "must be after created_after")
+    check_created_range(created_after, created_before)
     query = visible_events(user)
     if event_type is not None:
         query = query.where(Event.event_type == event_type)

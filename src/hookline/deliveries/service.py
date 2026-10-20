@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from hookline.deliveries.models import Delivery, DeliveryAttempt, DeliveryStatus
 from hookline.endpoints.models import Endpoint
-from hookline.errors import ConflictError, InvalidFieldError, NotFoundError
+from hookline.errors import ConflictError, NotFoundError
 from hookline.events.models import Event
+from hookline.events.service import check_created_range
 from hookline.pagination import PageParams
 from hookline.users.models import User, UserRole
 
@@ -59,10 +60,7 @@ def apply_filters(query: Select[Delivery], filters: DeliveryFilters) -> Select[D
 def list_deliveries(
     session: Session, user: User, filters: DeliveryFilters, page: PageParams
 ) -> tuple[list[Delivery], int]:
-    created_after = filters.created_after
-    created_before = filters.created_before
-    if created_after is not None and created_before is not None and created_before <= created_after:
-        raise InvalidFieldError("created_before", "must be after created_after")
+    check_created_range(filters.created_after, filters.created_before)
     query = apply_filters(visible_deliveries(user), filters)
     total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
     deliveries = session.scalars(
