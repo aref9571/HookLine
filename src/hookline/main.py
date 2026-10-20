@@ -10,6 +10,7 @@ from hookline.endpoints.router import router as endpoints_router
 from hookline.errors import register_error_handlers
 from hookline.events.router import router as events_router
 from hookline.health.router import router as health_router
+from hookline.request_logging import RequestLoggingMiddleware
 from hookline.security_headers import SecurityHeadersMiddleware
 from hookline.stats.router import router as stats_router
 from hookline.users.router import router as users_router
@@ -27,6 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(app.state.engine)
     app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=settings.max_body_bytes)
     app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestLoggingMiddleware)
     register_error_handlers(app)
     app.include_router(health_router)
     app.include_router(auth_router)
