@@ -72,6 +72,40 @@ def test_login_returns_access_and_refresh_tokens(client: TestClient, db_session:
     assert me.json()["email"] == EMAIL
 
 
+def test_auth_responses_are_not_cached(client: TestClient, db_session: Session) -> None:
+    add_user(db_session)
+
+    login = client.post("/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD})
+    refreshed = client.post(
+        "/api/v1/auth/refresh", json={"refresh_token": login.json()["refresh_token"]}
+    )
+    logout = client.post(
+        "/api/v1/auth/logout", json={"refresh_token": refreshed.json()["refresh_token"]}
+    )
+    failed = client.post("/api/v1/auth/login", json={"email": EMAIL, "password": "wrong"})
+
+    for response in (login, refreshed, logout, failed):
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-content-type-options"] == "nosniff"
+    assert [login.status_code, refreshed.status_code, logout.status_code] == [200, 200, 204]
+    assert failed.status_code == 401
+
+
+def test_other_api_responses_have_nosniff_but_no_cache_control(
+    client: TestClient, db_session: Session
+) -> None:
+    add_user(db_session)
+    tokens = log_in(client)
+
+    response = client.get(
+        "/api/v1/users/me", headers={"Authorization": "Bearer " + tokens["access_token"]}
+    )
+
+    assert response.status_code == 200
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "cache-control" not in response.headers
+
+
 def test_login_ignores_email_case_and_whitespace(client: TestClient, db_session: Session) -> None:
     add_user(db_session)
 

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from hookline.api_keys.models import ApiKey
-from hookline.users.models import User
+from hookline.users.models import User, UserRole
 from tests.helpers import add_user, auth_headers
 
 pytestmark = pytest.mark.integration
@@ -168,6 +168,25 @@ def test_revoking_another_users_key_returns_404(
     response = client.delete(f"/api/v1/api-keys/{key['id']}", headers=other_headers)
 
     assert response.status_code == 404
+    stored = db_session.get(ApiKey, uuid.UUID(key["id"]))
+    assert stored is not None
+    assert stored.revoked_at is None
+
+
+def test_admins_also_see_and_revoke_only_their_own_keys(
+    client: TestClient,
+    owner_headers: dict[str, str],
+    db_session: Session,
+) -> None:
+    key = create_key(client, owner_headers)
+    add_user(db_session, "admin@example.com", UserRole.ADMIN)
+    admin_headers = auth_headers(client, "admin@example.com")
+
+    listed = client.get("/api/v1/api-keys", headers=admin_headers)
+    revoked = client.delete(f"/api/v1/api-keys/{key['id']}", headers=admin_headers)
+
+    assert listed.json()["total"] == 0
+    assert revoked.status_code == 404
     stored = db_session.get(ApiKey, uuid.UUID(key["id"]))
     assert stored is not None
     assert stored.revoked_at is None

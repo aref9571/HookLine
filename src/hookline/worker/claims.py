@@ -1,6 +1,6 @@
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -22,12 +22,12 @@ class ClaimedDelivery:
     attempt_number: int
     attempt_count: int
     locked_until: datetime
-    url: str
-    secret: str
+    url: str = field(repr=False)
+    secret: str = field(repr=False)
     event_id: uuid.UUID
     event_type: str
     event_created_at: datetime
-    payload: dict[str, Any]
+    payload: dict[str, Any] = field(repr=False)
 
 
 def next_attempt_number() -> ScalarSelect[int]:

@@ -1,7 +1,7 @@
 import logging
 import secrets
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy import Select, func, select
@@ -23,7 +23,7 @@ SECRET_PREFIX = "whsec_"
 @dataclass
 class EndpointSecret:
     endpoint: Endpoint
-    secret: str
+    secret: str = field(repr=False)
 
 
 def new_secret() -> str:

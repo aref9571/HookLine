@@ -26,7 +26,21 @@ def test_settings_read_database_url_from_environment(monkeypatch: pytest.MonkeyP
 
     settings = Settings()
 
-    assert settings.database_url == "postgresql+psycopg://user:secret@db:5432/hookline"
+    assert (
+        settings.database_url.get_secret_value()
+        == "postgresql+psycopg://user:secret@db:5432/hookline"
+    )
+
+
+def test_settings_repr_hides_database_url_and_jwt_secret() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:database-password@db:5432/hookline",
+        jwt_secret="a-jwt-secret-that-must-stay-hidden-123",
+    )
+
+    for text in (repr(settings), str(settings)):
+        assert "database-password" not in text
+        assert "a-jwt-secret-that-must-stay-hidden-123" not in text
 
 
 def test_settings_require_database_url(monkeypatch: pytest.MonkeyPatch) -> None:

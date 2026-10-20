@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx2
 from sqlalchemy import update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from hookline.clock import get_now
@@ -176,10 +177,14 @@ def run_worker(
     logger.info("Worker started")
     last_cleanup_at: datetime | None = None
     while not stop_event.is_set():
-        last_cleanup_at = clean_up_if_due(session_factory, now_func(), last_cleanup_at)
-        claimed_count = run_once(
-            session_factory, client, settings, stop_event, now_func, random_func, resolver
-        )
+        claimed_count = 0
+        try:
+            last_cleanup_at = clean_up_if_due(session_factory, now_func(), last_cleanup_at)
+            claimed_count = run_once(
+                session_factory, client, settings, stop_event, now_func, random_func, resolver
+            )
+        except OperationalError:
+            logger.warning("Database is unavailable, trying again after the poll interval")
         if claimed_count == 0:
             stop_event.wait(settings.worker_poll_seconds)
     logger.info("Worker stopped")

@@ -1,7 +1,7 @@
 import logging
 import secrets
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
@@ -24,7 +24,7 @@ INVALID_API_KEY_DETAIL = "Invalid API key."
 @dataclass
 class CreatedApiKey:
     api_key: ApiKey
-    plaintext: str
+    plaintext: str = field(repr=False)
 
 
 def new_api_key() -> str:

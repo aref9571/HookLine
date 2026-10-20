@@ -3,7 +3,7 @@ import logging
 import socket
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -21,12 +21,12 @@ MAX_RESPONSE_EXCERPT_CHARACTERS = 1000
 
 @dataclass
 class DeliveryRequest:
-    url: str
-    secret: str
+    url: str = field(repr=False)
+    secret: str = field(repr=False)
     event_id: uuid.UUID
     event_type: str
     event_created_at: datetime
-    payload: dict[str, Any]
+    payload: dict[str, Any] = field(repr=False)
     attempt_number: int
 
 

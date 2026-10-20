@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 import logging
 import uuid
@@ -79,7 +80,7 @@ def replay_event(
     event = session.scalars(
         select(Event).where(Event.user_id == user_id, Event.idempotency_key == idempotency_key)
     ).one()
-    if event.request_hash != request_hash:
+    if not hmac.compare_digest(event.request_hash or "", request_hash):
         raise ConflictError("The idempotency key was already used with a different request.")
     logger.info("Event %s replayed for idempotency key", event.id)
     return SubmittedEvent(

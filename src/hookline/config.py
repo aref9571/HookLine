@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Hookline"
     log_level: LogLevel = "INFO"
-    database_url: str
+    database_url: SecretStr
     jwt_secret: SecretStr = Field(min_length=32)
     access_token_minutes: int = Field(default=15, ge=1)
     refresh_token_days: int = Field(default=7, ge=1)

@@ -1,6 +1,6 @@
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, select, update
@@ -21,8 +21,8 @@ INVALID_REFRESH_TOKEN_DETAIL = "Invalid refresh token."
 
 @dataclass
 class TokenPair:
-    access_token: str
-    refresh_token: str
+    access_token: str = field(repr=False)
+    refresh_token: str = field(repr=False)
 
 
 def authenticate(session: Session, email: str, password: str) -> User | None:
