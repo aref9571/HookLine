@@ -69,9 +69,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-API-key rate limiting on `POST /api/v1/events` with a fixed one-minute window counted by one atomic upsert: `429` with `Retry-After` over the limit, and `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers on successful responses.
 - The worker deletes rate limit windows older than one hour, at most once a minute.
 - Decision record 0006 for rate limiting.
+- Request logging: one line per request with the method, path, status code and duration, without query strings, headers or bodies.
+- `X-Content-Type-Options: nosniff` on every response and `Cache-Control: no-store` on `/api/v1/auth/*` responses.
+- CI fails when test coverage is below 85%.
+- Threat model, secret handling, response headers, dependency check and known limitations in `docs/security.md`, and a new testing guide in `docs/testing.md`.
 
 ### Changed
 
 - The API key dependency is now `get_current_api_key` and returns the key itself, so event intake can store which key sent an event.
 - httpx2 is now a runtime dependency, because the delivery sender uses it.
 - The worker decides when a delivery is `dead` from `attempt_count` (attempts since creation or the last manual retry) instead of the attempt number, and the retry delay is based on the same count.
+- `HOOKLINE_DATABASE_URL` is held as a secret value, so the database password is not shown when the settings are printed.
+- Internal objects that carry tokens, keys, signing secrets, target URLs or payloads leave them out of their text representation.
+- Reusing an idempotency key compares the stored request hash in constant time.
+
+### Fixed
+
+- The worker no longer stops when the database is unavailable; it logs a warning and tries again after the poll interval.

@@ -50,8 +50,10 @@ Many products, such as Stripe, GitHub and Shopify, notify other systems by sendi
 - Per-API-key rate limiting on `POST /api/v1/events` (`HOOKLINE_RATE_LIMIT_PER_MINUTE` per minute, `429` with `Retry-After` above it, and `X-RateLimit-Limit` and `X-RateLimit-Remaining` headers), stored in PostgreSQL with a fixed one-minute window
 - A command to create the first admin user: `python -m hookline.cli create-admin --email ...`
 - Error responses in RFC 9457 problem details format (`application/problem+json`), with validation errors returned as `400`
+- One log line per request with the method, path, status and duration, and no query strings, headers or bodies
+- `X-Content-Type-Options: nosniff` on every response and `Cache-Control: no-store` on the login, refresh and logout responses
 - A Docker Compose file that starts PostgreSQL 17 for local development
-- Unit tests, integration tests against a real PostgreSQL started by Testcontainers (including tests for every check constraint, unique constraint and delete rule of the schema), and a CI workflow for formatting, linting, type checking and tests
+- Unit tests, integration tests against a real PostgreSQL started by Testcontainers (including tests for every check constraint, unique constraint and delete rule of the schema), and a CI workflow for formatting, linting, type checking and tests with a minimum coverage of 85%
 
 ## Tech stack
 
@@ -180,7 +182,7 @@ mypy src
 pytest --cov --cov-report=term-missing
 ```
 
-The integration tests start their own PostgreSQL container, so Docker must be running. See [docs/development.md](docs/development.md) for details and troubleshooting.
+The integration tests start their own PostgreSQL container, so Docker must be running. CI fails when test coverage drops below 85%. See [docs/development.md](docs/development.md) for details and troubleshooting, and [docs/testing.md](docs/testing.md) for how the tests are organised.
 
 ## Documentation
 
@@ -189,6 +191,7 @@ The integration tests start their own PostgreSQL container, so Docker must be ru
 - [Database](docs/database.md)
 - [Development](docs/development.md)
 - [Security](docs/security.md)
+- [Testing](docs/testing.md)
 - [Decision records](docs/decisions/)
 
 ## License

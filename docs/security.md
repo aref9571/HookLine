@@ -1,6 +1,30 @@
 # Security
 
-This document describes how Hookline protects passwords, tokens, API keys and endpoint secrets, how roles are checked, how subscriber URLs are checked against server-side request forgery and how deliveries are signed. Later sections are added as the matching features are built.
+This document describes what Hookline protects, against whom, and how: passwords, tokens, API keys and endpoint secrets, roles and ownership, subscriber URLs and server-side request forgery, signed deliveries, size and rate limits, response headers and logging. The last section lists the known limitations.
+
+## Threat model
+
+Hookline is a backend service with no browser client. These are the parties it has to deal with:
+
+- **Users** (`admin` and `member`) call the management API with a JWT. A member must not be able to read or change another member's API keys, endpoints, events, deliveries or statistics, or find out whether an ID belongs to someone else.
+- **Producer applications** send events with an API key. A key must only work for its owner, and one busy or broken producer must not be able to fill the database or keep the worker busy for everyone.
+- **Subscriber endpoints** receive deliveries. Their owners choose the URLs, so a URL must not make Hookline call services inside its own network. Receivers must be able to check that a request really came from Hookline and was not changed or replayed.
+- **Someone on the network or with a copy of data** may see log files, error responses or a database backup. Passwords, tokens and keys must not be readable from them.
+
+What Hookline protects, and where it is described below:
+
+| Asset | Protection |
+|---|---|
+| Passwords | bcrypt hashes, same answer for every failed login |
+| Access and refresh tokens | HS256 with a pinned algorithm, short lifetime, refresh tokens stored as hashes, rotation with reuse detection |
+| API keys | 256 random bits, stored as SHA-256 hashes, revocable, rate limited |
+| Endpoint signing secrets | shown once, never logged or returned again |
+| Other users' data | ownership checks in every query, `404` instead of `403` |
+| The internal network | URL checks at create, update and send time, no redirects |
+| Delivered payloads | HMAC-SHA256 signature with a timestamp |
+| The service itself | request size limits, rate limiting, problem details without internal error text |
+
+Out of scope: protection against someone who already controls the server, the database or the environment variables; encryption of data at rest; and network-level protection such as TLS termination, which belongs to the deployment in front of Hookline.
 
 ## Passwords
 
@@ -130,6 +154,32 @@ Other points for receivers:
 
 Each API key may send at most `HOOKLINE_RATE_LIMIT_PER_MINUTE` (default 120) event intake requests per minute; more get `429` with `Retry-After`. This stops one misbehaving producer from filling the database or keeping the worker busy for everyone else. The counter lives in PostgreSQL, so the limit holds across several API processes, and it is counted with one atomic upsert, so concurrent requests cannot pass the limit together. The fixed window allows up to twice the limit around the start of a minute; this and the other trade-offs are described in [decision 0006](decisions/0006-rate-limiting.md). Requests without a valid key are rejected with `401` before the counter runs, so this limit does not protect against floods of invalid keys.
 
+## Settings and secrets in memory
+
+- `HOOKLINE_JWT_SECRET` and `HOOKLINE_DATABASE_URL` (which contains the database password) are held as pydantic `SecretStr` values. Printing the settings shows `**********` for both, and `Settings` uses `hide_input_in_errors=True`, so a settings validation error does not echo the values either. The real value is only read where it is needed: when signing or checking a JWT and when creating the database engine.
+- The small dataclasses that carry secrets inside the code (`TokenPair`, `CreatedApiKey`, `EndpointSecret`, `ClaimedDelivery` and `DeliveryRequest`) leave the secret fields out of their `repr`. If one of them ends up in a log line or a stack trace by mistake, it does not show the token, key, signing secret, target URL or payload. Tests check the `repr` of each of them.
+
+## Comparing secrets
+
+- Received API keys and refresh tokens are never compared in Python. They are hashed with SHA-256 and looked up by the hash through a unique index, so the comparison happens inside PostgreSQL on the hash.
+- Signatures are compared with `hmac.compare_digest` (`verify_signature`), and so is the stored request hash when an idempotency key is reused (`replay_event` in `events/service.py`), so the time a comparison takes does not reveal how many characters matched.
+- Passwords are checked with `bcrypt.checkpw`.
+
+## Database queries
+
+All queries are built with SQLAlchemy and send values as bound parameters. No SQL is built from strings with f-strings or `%`. The only hand-written SQL strings are constants (`SELECT 1` for the readiness check, the check constraint and index definitions in the models), and the test helper that empties the tables joins only table names taken from the models, quoted by SQLAlchemy.
+
+## Response headers and CORS
+
+- Every response carries `X-Content-Type-Options: nosniff`, so a browser never guesses a different content type than the one Hookline sends (`src/hookline/security_headers.py`).
+- Responses under `/api/v1/auth/` (login, refresh and logout) also carry `Cache-Control: no-store`, because they contain tokens, which no browser or proxy cache should keep.
+- CORS is not enabled. Hookline has no browser client, so no `Access-Control-Allow-Origin` header is ever sent and browsers block cross-site JavaScript from reading its responses. A test sends a CORS preflight request and checks this.
+- One gap: a request that ends in an unexpected error gets its `500` answer from Starlette's outermost error handler, which runs outside these middlewares, so that one response does not carry the headers.
+
+## Dependencies
+
+The installed dependencies were checked once with `pip-audit` on 2026-10-20 (pip-audit 2.10.1, against the PyPI advisory database): no known vulnerabilities were found. `pip-audit` is not a project dependency and does not run in CI; running it again before a release is a manual step.
+
 ## Clock
 
 The current time comes from the FastAPI dependency `get_now` in `src/hookline/clock.py`, which returns `datetime.now(UTC)`. Tests replace it to check expiry without waiting.
@@ -137,3 +187,18 @@ The current time comes from the FastAPI dependency `get_now` in `src/hookline/cl
 ## Logging
 
 Passwords, password hashes, access tokens, refresh tokens, API keys and all of their hashes are never written to the logs. Log lines about authentication only contain the user ID, for example when refresh token reuse is detected. A test checks the captured logs of a full login, refresh, reuse and logout flow for each of these values, another test does the same for creating and revoking an API key, and a third one checks that endpoint secrets and endpoint URLs are not logged when an endpoint is created or its secret is rotated. Endpoint log lines only contain the endpoint ID and the user ID. Event payloads are never logged; event log lines only contain the event ID and the number of deliveries, and a test checks that neither the payload nor the API key appears in the logs of an intake request. The sender never logs the target URL, the secret, the signature or the body; when a target address is not allowed it logs only the event ID. The worker logs one line per attempt with the delivery ID, the attempt number, the outcome, the status code and the duration, and a test checks that neither the payload nor the endpoint secret appears in it. A manual retry logs only the delivery ID and the ID of the user who asked for it.
+
+Every request is logged in one line by `RequestLoggingMiddleware` in `src/hookline/request_logging.py`, for example `GET /api/v1/deliveries 200 duration_ms=12`. The line contains only the method, the path, the status code and the duration. Query strings, headers (including `Authorization` and `X-API-Key`) and bodies are never logged; a test sends all of them with known values and checks that none appears. Paths only contain resource IDs. uvicorn's own access log is separate and does include query strings; Hookline's query parameters are filters and paging values, never secrets.
+
+When the worker cannot reach the database it logs only "Database is unavailable", not the error text, because database error messages can contain connection details.
+
+## Known limitations
+
+- Endpoint signing secrets are stored in plain text, because they are needed to sign deliveries. Encrypting them at rest is future work.
+- DNS can change between the URL check before a delivery and the moment the HTTP client connects (DNS rebinding); see the SSRF section.
+- Address ranges that are public but internal to a particular network are not detected by the SSRF check.
+- The fixed rate limit window allows up to twice the limit around the start of a minute, and requests with an invalid API key are rejected before the rate limit is counted, so they are not limited.
+- Access token expiry is checked against the system clock of the API process, and an access token stays valid until it expires even after logout; only refresh tokens are revoked. Deactivated users are rejected on every request, because the user row is loaded each time.
+- There is no limit on failed login attempts per account or per address. bcrypt makes each guess slow, but a lockout or login rate limit would be the next step.
+- A `500` response from an unexpected error does not carry the security headers (see above).
+- Delivery is at least once, so receivers must de-duplicate on `Hookline-Event-Id`.

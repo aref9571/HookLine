@@ -132,6 +132,8 @@ pytest -m "not integration"
 pytest -m integration
 ```
 
+CI runs the same checks and fails when total test coverage is below 85% (`pytest --cov --cov-fail-under=85`). How the tests are organised, how Testcontainers is used and how to run smaller subsets is described in [testing.md](testing.md).
+
 ## Troubleshooting Docker
 
 - `Cannot connect to the Docker daemon` or similar connection errors in the integration tests mean Docker is not running. Start Docker and run the tests again. The unit tests do not need Docker.
