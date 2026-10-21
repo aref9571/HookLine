@@ -6,7 +6,7 @@ from fastapi import Depends, Request
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "1.0.0"
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]

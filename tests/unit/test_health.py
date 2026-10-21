@@ -38,6 +38,6 @@ def test_openapi_schema_is_available(client_without_database: TestClient) -> Non
     assert response.status_code == 200
     schema = response.json()
     assert schema["info"]["title"] == "Hookline"
-    assert schema["info"]["version"] == "0.1.0"
+    assert schema["info"]["version"] == "1.0.0"
     assert "/health/live" in schema["paths"]
     assert "/health/ready" in schema["paths"]
