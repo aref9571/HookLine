@@ -1,6 +1,6 @@
 # API
 
-This document lists every route that exists so far, with request and response examples. The interactive OpenAPI docs are served at `/docs` and the schema at `/openapi.json`.
+This document lists every route of Hookline 1.0.0, with request and response examples. The interactive OpenAPI docs are served at `/docs` and the schema at `/openapi.json`.
 
 All application routes are under `/api/v1`. The health routes are not.
 
@@ -33,6 +33,8 @@ Every error uses RFC 9457 problem details with the media type `application/probl
   "errors": [{"field": "limit", "message": "Input should be greater than or equal to 1"}]
 }
 ```
+
+The OpenAPI schema documents this shape as the `Problem` model for the `4XX` and `5XX` responses of every route. FastAPI's default `422` validation response is not listed, because Hookline answers validation errors with `400`. The schema shows the media type `application/json` for these responses, because FastAPI uses the route's own media type there; the real responses are sent as `application/problem+json`.
 
 ## Request size
 

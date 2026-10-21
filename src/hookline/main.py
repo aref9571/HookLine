@@ -7,7 +7,7 @@ from hookline.config import APP_VERSION, Settings, configure_logging, get_settin
 from hookline.database import create_engine_from_settings, create_session_factory
 from hookline.deliveries.router import router as deliveries_router
 from hookline.endpoints.router import router as endpoints_router
-from hookline.errors import register_error_handlers
+from hookline.errors import PROBLEM_RESPONSES, register_error_handlers
 from hookline.events.router import router as events_router
 from hookline.health.router import router as health_router
 from hookline.request_logging import RequestLoggingMiddleware
@@ -22,7 +22,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     configure_logging(settings.log_level)
 
-    app = FastAPI(title=settings.app_name, version=APP_VERSION, docs_url="/docs")
+    app = FastAPI(
+        title=settings.app_name,
+        version=APP_VERSION,
+        docs_url="/docs",
+        responses=PROBLEM_RESPONSES,
+    )
     app.state.settings = settings
     app.state.engine = create_engine_from_settings(settings)
     app.state.session_factory = create_session_factory(app.state.engine)

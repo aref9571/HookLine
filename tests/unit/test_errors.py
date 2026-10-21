@@ -128,3 +128,23 @@ def test_field_name_skips_the_location_prefix() -> None:
     assert field_name(("body", "url")) == "url"
     assert field_name(("body", "items", 0, "name")) == "items.0.name"
     assert field_name(("body",)) == "body"
+
+
+def test_openapi_documents_problem_details_instead_of_422(
+    client_without_database: TestClient,
+) -> None:
+    schema = client_without_database.get("/openapi.json").json()
+
+    operations = []
+    for path_operations in schema["paths"].values():
+        operations.extend(path_operations.values())
+    assert len(operations) == 25
+    for operation in operations:
+        responses = operation["responses"]
+        assert "422" not in responses
+        for status in ("4XX", "5XX"):
+            problem_schema = responses[status]["content"]["application/json"]["schema"]
+            assert problem_schema == {"$ref": "#/components/schemas/Problem"}
+    assert "HTTPValidationError" not in schema["components"]["schemas"]
+    problem_fields = schema["components"]["schemas"]["Problem"]["properties"]
+    assert set(problem_fields) == {"type", "title", "status", "detail", "errors"}

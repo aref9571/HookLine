@@ -6,12 +6,32 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
 
 PROBLEM_JSON = "application/problem+json"
+
+
+class FieldProblem(BaseModel):
+    field: str
+    message: str
+
+
+class Problem(BaseModel):
+    type: str = "about:blank"
+    title: str
+    status: int
+    detail: str
+    errors: list[FieldProblem] | None = None
+
+
+PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
+    "4XX": {"model": Problem, "description": "Client error as problem details"},
+    "5XX": {"model": Problem, "description": "Server error as problem details"},
+}
 
 
 class AppError(Exception):
