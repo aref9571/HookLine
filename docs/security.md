@@ -178,7 +178,7 @@ All queries are built with SQLAlchemy and send values as bound parameters. No SQ
 
 ## Dependencies
 
-The installed dependencies were checked once with `pip-audit` on 2026-10-20 (pip-audit 2.10.1, against the PyPI advisory database): no known vulnerabilities were found. `pip-audit` is not a project dependency and does not run in CI; running it again before a release is a manual step.
+The installed dependencies were checked with `pip-audit` on 2026-10-20 and again for the 1.0.0 release on 2026-10-21 (pip-audit 2.10.1, against the PyPI advisory database): no known vulnerabilities were found. `pip-audit` is not a project dependency and does not run in CI; running it again before a release is a manual step.
 
 ## Clock
 
