@@ -36,7 +36,7 @@ People who log in. Each member owns their own keys, endpoints and events.
 | created_at | timestamptz | not null, default now() |
 
 - `ck_users_role` allows only `admin` and `member`, so an unknown role can never be stored, even by a bug in the code.
-- `uq_users_email_lower` is a unique index on `lower(email)`. `A@x.com` and `a@x.com` are the same mailbox for login purposes, so they must not become two accounts. Login will look a user up by `lower(email)`, which uses the same index.
+- `uq_users_email_lower` is a unique index on `lower(email)`. `A@x.com` and `a@x.com` are the same mailbox for login purposes, so they must not become two accounts. Login looks a user up by `lower(email)`, which uses the same index.
 - 254 characters is the longest valid email address.
 
 ### refresh_tokens
