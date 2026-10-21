@@ -102,10 +102,11 @@ SECRET=$(curl -fsS -X POST localhost:8000/api/v1/endpoints \
   | python3 -c "import json, sys; print(json.load(sys.stdin)['secret'])")
 ```
 
-Restart the receiver with the endpoint's signing secret, send an event and look at the result:
+Restart the receiver with the endpoint's signing secret, wait until it listens again, send an event and look at the result:
 
 ```bash
 RECEIVER_SECRET=$SECRET docker compose up -d receiver
+until docker compose logs receiver | grep -q "Demo receiver listening"; do sleep 1; done
 curl -fsS -X POST localhost:8000/api/v1/events \
   -H "X-API-Key: $API_KEY" \
   -H 'Idempotency-Key: order-42' \

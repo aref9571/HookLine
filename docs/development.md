@@ -98,7 +98,7 @@ docker compose exec api python -m hookline.cli create-admin --email admin@exampl
 The demo receiver is a small standard-library HTTP server. It accepts `POST /hook`, checks the `Hookline-Signature` header with the same algorithm as the example in [security.md](security.md#verifying-signatures), answers `204` for a valid signature and `401` otherwise, and prints one line per request with the event ID. It only knows the signing secret through `RECEIVER_SECRET`, and the secret is created by Hookline when the endpoint is created, so the order is:
 
 1. Log in, create an API key and create an endpoint with the URL `http://receiver:9000/hook` (the requests are shown in the README).
-2. Put the `secret` from the endpoint response into `.env` as `RECEIVER_SECRET=...` and restart the receiver with `docker compose up -d receiver`.
+2. Put the `secret` from the endpoint response into `.env` as `RECEIVER_SECRET=...` and restart the receiver with `docker compose up -d receiver`. Wait until `docker compose logs receiver` shows `Demo receiver listening on port 9000`; an event sent while the receiver is still restarting fails its first attempt with `connection error` and is only delivered after the retry delay.
 3. Send an event with the API key, then run `docker compose logs receiver`. It shows `Verified signature for event <id>` once the worker has delivered it.
 
 ### Smoke test
